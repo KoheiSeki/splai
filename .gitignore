@@ -37,3 +37,6 @@ backend/*.egg-info/
 
 # claude.md
 CLAUDE.md
+
+# prettier
+.prettierrc
