@@ -3,3 +3,37 @@ docs/*
 
 # .env
 .env.*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env*.local
+frontend/coverage/
+
+# Backend
+backend/__pycache__/
+backend/.venv/
+backend/.pytest_cache/
+backend/.ruff_cache/
+backend/.env
+backend/dist/
+backend/*.egg-info/
+
+# Logs / artifacts
+*.log
+
+# Sentry
+.sentryclirc
+
+# claude.md
+CLAUDE.md
