@@ -1,8 +1,12 @@
 # docs
 docs/*
 
-# .env
+# Environment variables
+# 実値を含む env ファイル(.env, .env.local, .env.dev 等)は無視。
+# テンプレートの .env.example は追跡対象として明示的に除外する。
+.env
 .env.*
+!.env.example
 
 # OS
 .DS_Store
