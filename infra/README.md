@@ -11,7 +11,15 @@
 
 ## Vercel
 
-- (Task 17 で実施)
+1. `npx vercel link` でプロジェクト紐付け
+2. ダッシュボードで環境変数を設定:
+   - NEXT_PUBLIC_API_BASE_URL (Fly.io URL)
+   - NEXT_PUBLIC_APP_URL
+   - NEXT_PUBLIC_SENTRY_DSN
+3. GitHub 連携で自動デプロイ:
+   - main → Production
+   - develop → Preview
+   - feature/\* → Preview
 
 ## Fly.io
 

@@ -33,5 +33,11 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules",
+    // vitest.config.ts は @vitejs/plugin-react と vitest 内部 vite の型不整合で
+    // Next.js のビルド時 typecheck が失敗するため除外。
+    // vitest 自身は tsconfig.exclude を参照しないので、テスト実行には影響しない。
+    "vitest.config.ts"
+  ]
 }
