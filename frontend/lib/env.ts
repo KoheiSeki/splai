@@ -13,3 +13,4 @@ export function parseEnv(source: Record<string, string | undefined>): Env {
 }
 
 export const env = parseEnv(process.env as Record<string, string | undefined>);
+console.log(env);

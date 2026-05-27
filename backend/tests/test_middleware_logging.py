@@ -26,9 +26,7 @@ def test_logs_request_and_response(capsys):
     res = client.get("/ping")
     assert res.status_code == 200
 
-    lines = [
-        l for l in capsys.readouterr().out.splitlines() if l.strip().startswith("{")
-    ]
+    lines = [l for l in capsys.readouterr().out.splitlines() if l.strip().startswith("{")]
     parsed = [json.loads(l) for l in lines]
     events = [p["event"] for p in parsed]
     assert "request.start" in events
