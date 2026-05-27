@@ -23,7 +23,10 @@
 
 ## Fly.io
 
-- (Task 18 で実施)
+1. `flyctl auth login` & `flyctl apps create splai-backend --region nrt`
+2. `flyctl secrets set ...` で環境変数を設定
+3. `flyctl deploy` でデプロイ
+4. `https://splai-backend.fly.dev/health` で疎通確認
 
 ## Sentry
 
