@@ -1,3 +1,4 @@
+import sentry_sdk
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -14,6 +15,14 @@ def create_app() -> FastAPI:
     configure_logging(settings.log_level)
 
     app = FastAPI(title="SPLAI Backend", version="0.1.0")
+
+    if settings.sentry_dsn and settings.env != "test":
+        sentry_sdk.init(
+            dsn=settings.sentry_dsn,
+            environment=settings.env,
+            traces_sample_rate=0.1,
+            send_default_pii=False,
+        )
 
     app.add_middleware(
         CORSMiddleware,
