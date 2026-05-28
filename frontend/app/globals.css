@@ -1,0 +1,35 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-ink: #0a0a0a;
+  --color-paper: #f4f1e8;
+  --color-red: #e8000c;
+  --color-rule-grey: #cfd0cc;
+
+  --font-display: 'Archivo Black', sans-serif;
+  --font-jp-display: 'Noto Sans JP', sans-serif;
+  --font-editorial: 'Shippori Mincho', serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+}
+
+@layer base {
+  html {
+    background: var(--color-paper);
+    color: var(--color-ink);
+  }
+  body {
+    font-family: var(--font-mono);
+  }
+}
+
+@layer utilities {
+  /* @theme で生成される .font-jp-display / .font-editorial に
+   * design.md §12.4 のブランド既定 weight を上乗せする。
+   */
+  .font-jp-display {
+    font-weight: 900;
+  }
+  .font-editorial {
+    font-weight: 700;
+  }
+}
