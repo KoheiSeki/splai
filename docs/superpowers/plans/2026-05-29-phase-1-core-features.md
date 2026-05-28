@@ -80,14 +80,13 @@ splai/
 │   │           └── page.tsx                    ← Task 17(GroupDashboard を呼ぶだけ)
 │   ├── features/                               ← ★ ドメイン単位の機能スライス
 │   │   ├── groups/
-│   │   │   ├── components/
+│   │   │   ├── components/                     ← 複数 file 前提でディレクトリ
 │   │   │   │   ├── create-group-form.tsx       ← Task 16
 │   │   │   │   ├── group-dashboard.tsx         ← Task 17(/g/[uuid] の主要構造)
 │   │   │   │   └── member-select.tsx           ← Task 17
-│   │   │   ├── hooks/
-│   │   │   │   └── use-group.ts                ← Task 17
 │   │   │   ├── api.ts                          ← createGroup, getGroup, addMember
-│   │   │   └── types.ts                        ← group / member 型(必要時)
+│   │   │   ├── types.ts                        ← group / member 型(必要時)
+│   │   │   └── use-group.ts                    ← Task 17(flat 配置、1-2 hook なら hooks/ 不要)
 │   │   ├── payments/
 │   │   │   ├── components/
 │   │   │   │   ├── payment-form.tsx            ← Task 18
@@ -137,6 +136,18 @@ splai/
 > | `lib/` | **副作用 / Web API 依存の infrastructure primitives** | axios インスタンス、localStorage、env 検証 |
 >
 > **共有 vs 機能特化の判定**:「このファイルが消えると影響する feature 数」が 1 個なら `features/<X>/`、2 個以上なら共有層(`hooks/` / `components/` / `utils/` / `lib/`)へ。
+>
+> **feature 内の sub-directory 化ルール(昇格)**:`features/<X>/` 内では「**単一ファイルは flat、複数になったら sub-dir に昇格**」を一貫して適用:
+>
+> | 種別 | 1-2 file | 3+ file |
+> |---|---|---|
+> | hooks(`use-*.ts`) | flat(feature 直下に置く)| `features/<X>/hooks/` に昇格 |
+> | api | `api.ts`(flat) | `features/<X>/api/` に昇格 |
+> | types | `types.ts`(flat) | `features/<X>/types/` に昇格 |
+> | utils(機能特化) | `utils.ts`(flat) | `features/<X>/utils/` に昇格 |
+> | components | 常に `components/`(複数前提) | (常にディレクトリ) |
+>
+> Phase 1 の各 feature は hooks 1 個前後 → **`features/<X>/use-xxx.ts` の flat 配置**を採用。
 
 ---
 
@@ -2523,12 +2534,12 @@ git commit -m "feat(frontend): replace landing page with create group form"
 - Create: `frontend/app/g/[uuid]/page.tsx`(薄い shell)
 - Create: `frontend/features/groups/components/group-dashboard.tsx`(主構造、Section 級)
 - Create: `frontend/features/groups/components/member-select.tsx`
-- Create: `frontend/features/groups/hooks/use-group.ts`
+- Create: `frontend/features/groups/use-group.ts`(feature flat 配置)
 
-- [ ] **Step 1: グループ取得 hook を feature 内に実装**
+- [ ] **Step 1: グループ取得 hook を feature 直下に flat 実装**
 
 ```typescript
-// frontend/features/groups/hooks/use-group.ts
+// frontend/features/groups/use-group.ts
 "use client";
 import { useEffect, useState } from "react";
 
@@ -2672,7 +2683,7 @@ export function MemberSelect({ groupId, members, onSelect }: Props) {
 // frontend/features/groups/components/group-dashboard.tsx
 "use client";
 
-import { useGroup } from "@/features/groups/hooks/use-group";
+import { useGroup } from "@/features/groups/use-group";
 import { useMemberStorage } from "@/hooks/use-member-storage";
 
 import { MemberSelect } from "./member-select";
@@ -3180,7 +3191,7 @@ export function SettlementView({
 "use client";
 import { useState } from "react";
 
-import { useGroup } from "@/features/groups/hooks/use-group";
+import { useGroup } from "@/features/groups/use-group";
 import { PaymentForm } from "@/features/payments/components/payment-form";
 import { PaymentList } from "@/features/payments/components/payment-list";
 import { SettlementView } from "@/features/settlement/components/settlement-view";

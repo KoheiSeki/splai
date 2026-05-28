@@ -382,13 +382,14 @@ frontend/
 ├── app/                    # Next.js routing 専用(page / layout のみ、薄い shell)
 ├── features/               # ★ ドメイン単位の自己完結スライス
 │   └── <domain>/           #   例: groups, payments, settlement
-│       ├── components/     #   feature 特化の UI(Section / Component 級)
-│       ├── hooks/          #   feature 特化の hooks
-│       ├── api.ts          #   その feature の HTTP ラッパ
-│       └── types.ts        #   その feature の型
+│       ├── components/     #   複数 file 前提でディレクトリ
+│       ├── api.ts          #   1 file → flat。3+ になったら api/ に昇格
+│       ├── types.ts        #   同上
+│       ├── use-xxx.ts      #   ★ hook 1-2 個は flat。3+ になったら hooks/ に昇格
+│       └── utils.ts        #   feature 特化の純粋関数(必要時、同上)
 ├── components/             # 共有 UI primitives(複数 feature が使う)
 ├── hooks/                  # 共有 hooks(複数 feature が使う)
-├── utils/                  # ★ 純粋関数 helper(format, calc 等、副作用なし)
+├── utils/                  # ★ 共有の純粋関数 helper(format, calc 等)
 └── lib/                    # ★ 副作用 / Web API 依存の infra primitives
     ├── api/                #   axios インスタンス、生成型
     ├── auth/               #   localStorage 低レベル
@@ -396,11 +397,26 @@ frontend/
     └── request-id.ts
 ```
 
-**配置の判定**:
-- 「消えると影響する feature 数が **1 個** か?」→ `features/<X>/` 内に閉じる
-- 「**2 個以上** か?」→ 共有層(`components/` `hooks/` `utils/` `lib/`)へ
-- 「外部依存があるか(localStorage / fetch / process.env / 時刻 / random)?」→ `lib/`(infra)
-- 「pure(同じ入力 → 同じ出力)か?」→ `utils/`
+**配置の判定 — 2 軸**:
+
+1. **共有 vs 機能特化**(横軸):
+   - 影響 feature 数が **1 個** → `features/<X>/` 内に閉じる
+   - **2 個以上** → 共有層(`components/` / `hooks/` / `utils/` / `lib/`)へ昇格
+2. **副作用の有無**(縦軸、共有層内):
+   - 外部依存あり(localStorage / fetch / process.env / 時刻 / random) → `lib/`
+   - pure(同じ入力 → 同じ出力) → `utils/`
+
+**`features/<X>/` 内の sub-directory 化ルール**(単一 → flat、複数 → ディレクトリ):
+
+| 種別 | 1-2 file | 3+ file |
+|---|---|---|
+| hooks(`use-*.ts`) | feature 直下に flat | `features/<X>/hooks/` |
+| api | `api.ts` | `features/<X>/api/` |
+| types | `types.ts` | `features/<X>/types/` |
+| utils(機能特化) | `utils.ts` | `features/<X>/utils/` |
+| components | 常に `components/`(複数前提) | (常にディレクトリ) |
+
+→ ファイル増加に応じて自然にディレクトリ昇格。最初から空の `hooks/` ディレクトリを作らない。
 
 #### コンポーネント階層(語彙のみ、ディレクトリ強制なし)
 
