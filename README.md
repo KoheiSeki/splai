@@ -13,3 +13,4 @@ SPLAI(割り勘アプリ)実装リポジトリ。
 ## Local development
 
 詳細は Phase 0 計画書末尾「ローカル開発手順」を参照。
+

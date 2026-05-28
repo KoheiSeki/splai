@@ -1,0 +1,12 @@
+line-length = 100
+target-version = "py312"
+
+[lint]
+select = ["E", "F", "W", "I", "B", "UP", "N"]
+ignore = ["E501"]
+
+[lint.per-file-ignores]
+"tests/*" = ["E501"]
+# 設計書 §9 のドメイン例外は意図的に Error suffix を付けない命名を採用している
+# (GroupNotFound / MemberMismatch / RateLimitExceeded 等)。N818 を抑止する。
+"app/exceptions/domain.py" = ["N818"]

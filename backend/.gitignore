@@ -1,0 +1,27 @@
+# =====================================================================
+# Backend .gitignore — Python / FastAPI 特有のパターン
+# OS / Editor / 環境変数 / ログ等は ../.gitignore (repo root) を参照
+# =====================================================================
+
+# Python bytecode (ネスト含めて全部)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment(uv が生成)
+.venv/
+
+# Test / lint caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Coverage
+.coverage
+htmlcov/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/

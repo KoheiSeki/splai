@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SPLAI — BRAND IDENTITY · VOL. III</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400..900&family=Noto+Sans+JP:wght@400;700;900&family=Shippori+Mincho:wght@400;500;700;900&family=Noto+Serif+JP:wght@400;700;900&family=IBM+Plex+Mono:wght@300;400;500;700&family=DM+Mono:wght@400;500&display=swap"
+    rel="stylesheet"
+  />
+  <style>
+    :root {
+      --paper: #f4f1e8;
+      --ink: #0a0a0a;
+      --red: #e8000c;
+      --rule: 1.5px solid var(--ink);
+      --rule-thin: 1px solid var(--ink);
+      --rule-thick: 4px solid var(--ink);
+      --gutter: clamp(1rem, 2vw, 2rem);
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background: var(--paper);
+      color: var(--ink);
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 14px;
+      line-height: 1.4;
+      overflow-x: hidden;
+    }
+
+    /* paper grain */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 1;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='400'><filter id='n'><feTurbulence baseFrequency='0.85' numOctaves='2'/><feColorMatrix values='0 0 0 0 0.05 0 0 0 0 0.05 0 0 0 0 0.05 0 0 0 0.04 0'/></filter><rect width='400' height='400' filter='url(%23n)'/></svg>");
+      mix-blend-mode: multiply;
+      opacity: 0.6;
+    }
+
+    .magazine {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 2rem var(--gutter);
+      position: relative;
+      z-index: 2;
+    }
+
+    /* ============ MASTHEAD ============ */
+    .masthead {
+      border-top: var(--rule-thick);
+      border-bottom: var(--rule);
+      padding: 0.6rem 0;
+      display: grid;
+      grid-template-columns: auto 1fr auto auto;
+      gap: 1rem;
+      align-items: center;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.7rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+    }
+
+    .masthead .vol {
+      font-weight: 700;
+      letter-spacing: 0.3em;
+    }
+
+    .masthead .feature {
+      background: var(--ink);
+      color: var(--paper);
+      padding: 0.2rem 0.6rem;
+      letter-spacing: 0.3em;
+    }
+
+    .masthead .red {
+      color: var(--red);
+      font-weight: 700;
+    }
+
+    /* ============ HERO ============ */
+    .hero {
+      border-bottom: var(--rule);
+      padding: 3rem 0 2rem;
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1rem;
+      position: relative;
+    }
+
+    .hero .meta-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.72rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+    }
+
+    .hero .meta-top .right {
+      color: var(--red);
+    }
+
+    .hero .kicker {
+      font-family: 'Shippori Mincho', serif;
+      font-weight: 700;
+      font-size: clamp(1rem, 1.5vw, 1.3rem);
+      letter-spacing: 0.4em;
+      padding: 0.4rem 0;
+      border-top: var(--rule-thin);
+      border-bottom: var(--rule-thin);
+      display: inline-block;
+      align-self: start;
+    }
+
+    .hero .kicker .red { color: var(--red); }
+
+    .wordmark {
+      font-family: 'Archivo Black', sans-serif;
+      font-size: clamp(7rem, 22vw, 22rem);
+      line-height: 0.82;
+      letter-spacing: -0.06em;
+      margin: 1rem 0;
+      position: relative;
+    }
+
+    .wordmark .pl {
+      display: inline-block;
+      position: relative;
+    }
+
+    .wordmark .pl::after {
+      content: '';
+      position: absolute;
+      top: 8%;
+      left: -3%;
+      right: -3%;
+      bottom: 12%;
+      border: 4px solid var(--red);
+      pointer-events: none;
+    }
+
+    .wordmark .ai {
+      color: var(--red);
+      font-style: italic;
+      font-family: 'Archivo', sans-serif;
+      font-weight: 900;
+    }
+
+    .wordmark .punct {
+      color: var(--red);
+      font-size: 0.5em;
+      vertical-align: 0.5em;
+      margin-left: -0.05em;
+    }
+
+    .hero .below {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 2rem;
+      align-items: end;
+      border-top: var(--rule-thin);
+      padding-top: 1rem;
+    }
+
+    .hero .pronounce {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.85rem;
+      letter-spacing: 0.05em;
+    }
+
+    .hero .pronounce strong {
+      font-weight: 700;
+      color: var(--red);
+    }
+
+    .hero .right-meta {
+      text-align: right;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.7rem;
+      line-height: 1.6;
+      letter-spacing: 0.05em;
+    }
+
+    /* ============ SECTION HEADER ============ */
+    .section-header {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 1.5rem;
+      align-items: baseline;
+      margin: 3rem 0 1.5rem;
+      padding-bottom: 0.4rem;
+      border-bottom: var(--rule);
+    }
+
+    .section-header .num {
+      font-family: 'Archivo Black', sans-serif;
+      font-size: 1.8rem;
+      letter-spacing: -0.05em;
+      color: var(--red);
+    }
+
+    .section-header .label {
+      font-family: 'Noto Sans JP', sans-serif;
+      font-weight: 900;
+      font-size: 1.4rem;
+      letter-spacing: 0.05em;
+    }
+
+    .section-header .label .en {
+      font-family: 'Archivo', sans-serif;
+      font-size: 0.7em;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      margin-left: 1rem;
+      opacity: 0.6;
+    }
+
+    .section-header .meta {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.7rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      opacity: 0.6;
+    }
+
+    /* ============ FEATURE STORY ============ */
+    .feature-block {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 0;
+      column-gap: 2rem;
+      border-bottom: var(--rule);
+      padding-bottom: 2rem;
+    }
+
+    .feature-block .lead {
+      grid-column: 1 / -1;
+      font-family: 'Shippori Mincho', serif;
+      font-weight: 500;
+      font-size: clamp(1.5rem, 2.4vw, 2rem);
+      line-height: 1.5;
+      margin-bottom: 1.5rem;
+      max-width: 36ch;
+    }
+
+    .feature-block .lead .red { color: var(--red); }
+    .feature-block .lead em {
+      font-family: 'Archivo', sans-serif;
+      font-style: italic;
+      font-weight: 700;
+    }
+
+    .feature-block .col {
+      font-family: 'Noto Sans JP', sans-serif;
+      font-size: 0.9rem;
+      line-height: 1.85;
+      column-fill: balance;
+    }
+
+    .feature-block .col h4 {
+      font-family: 'Noto Sans JP', sans-serif;
+      font-weight: 900;
+      font-size: 0.78rem;
+      letter-spacing: 0.2em;
+      margin-bottom: 0.6rem;
+      padding-bottom: 0.3rem;
+      border-bottom: 2px solid var(--ink);
+    }
+
+    .feature-block .col h4 .num {
+      color: var(--red);
+      margin-right: 0.4rem;
+    }
+
+    /* ============ COLOR / TYPE GRID ============ */
+    .specs {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+      border-bottom: var(--rule);
+      padding-bottom: 2rem;
+    }
+
+    .spec-card {
+      border: var(--rule-thin);
+      padding: 1rem;
+      position: relative;
+    }
+
+    .spec-card .num {
+      position: absolute;
+      top: -0.6rem;
+      left: 1rem;
+      background: var(--paper);
+      padding: 0 0.4rem;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.7rem;
+      letter-spacing: 0.15em;
+      color: var(--red);
+    }
+
+    .spec-card .swatch {
+      height: 80px;
+      margin-bottom: 0.8rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .spec-card .swatch::after {
+      content: attr(data-hex);
+      position: absolute;
+      bottom: 0.4rem;
+      right: 0.4rem;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.62rem;
+      letter-spacing: 0.1em;
+      background: rgba(255, 255, 255, 0.85);
+      padding: 0.1rem 0.3rem;
+      color: #0a0a0a;
+    }
+
+    .spec-card .swatch.dark::after {
+      background: rgba(0, 0, 0, 0.7);
+      color: white;
+    }
+
+    .spec-card .name {
+      font-family: 'Noto Sans JP', sans-serif;
+      font-weight: 900;
+      font-size: 0.85rem;
+      letter-spacing: 0.04em;
+      margin-bottom: 0.3rem;
+    }
+
+    .spec-card .desc {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.7rem;
+      line-height: 1.5;
+      opacity: 0.75;
+    }
+
+    /* ============ TYPE SPECIMEN ============ */
+    .type-specimen {
+      border-bottom: var(--rule);
+      padding-bottom: 2rem;
+    }
+
+    .type-row {
+      display: grid;
+      grid-template-columns: 200px 1fr;
+      gap: 2rem;
+      padding: 1.5rem 0;
+      border-bottom: var(--rule-thin);
+      align-items: baseline;
+    }
+
+    .type-row:last-child { border-bottom: none; }
+
+    .type-row .label {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.72rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+    }
+
+    .type-row .label .red {
+      color: var(--red);
+      display: block;
+      margin-top: 0.3rem;
+      font-size: 0.65rem;
+    }
+
+    .type-row .label .name {
+      font-family: 'Archivo', sans-serif;
+      font-weight: 700;
+      font-size: 0.95rem;
+      letter-spacing: 0.02em;
+      text-transform: none;
+      margin-top: 0.3rem;
+    }
+
+    .specimen-archivo {
+      font-family: 'Archivo Black', sans-serif;
+      font-size: clamp(2.5rem, 5vw, 4.5rem);
+      line-height: 1;
+      letter-spacing: -0.04em;
+    }
+
+    .specimen-jp {
+      font-family: 'Noto Sans JP', sans-serif;
+      font-weight: 900;
+      font-size: clamp(1.8rem, 3vw, 2.6rem);
+      letter-spacing: 0.04em;
+    }
+
+    .specimen-mincho {
+      font-family: 'Shippori Mincho', serif;
+      font-weight: 700;
+      font-size: clamp(1.4rem, 2.4vw, 2rem);
+    }
+
+    .specimen-mono {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: clamp(0.95rem, 1.5vw, 1.15rem);
+      line-height: 1.5;
+    }
+
+    /* ============ APP MOCK ============ */
+    .app-mock-wrap {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 3rem;
+      border-bottom: var(--rule);
+      padding-bottom: 2rem;
+      align-items: start;
+    }
+
+    .app-mock-text {
+      font-family: 'Noto Sans JP', sans-serif;
+      font-size: 0.95rem;
+      line-height: 1.85;
+    }
+
+    .app-mock-text .quote {
+      font-family: 'Shippori Mincho', serif;
+      font-weight: 700;
+      font-size: 1.6rem;
+      line-height: 1.4;
+      margin-bottom: 1.5rem;
+      padding-left: 1rem;
+      border-left: 4px solid var(--red);
+    }
+
+    .app-mock-text dt {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.7rem;
+      letter-spacing: 0.2em;
+      color: var(--red);
+      text-transform: uppercase;
+      margin-top: 1.2rem;
+      margin-bottom: 0.2rem;
+    }
+
+    .app-mock-text dd {
+      font-size: 0.95rem;
+      line-height: 1.7;
+    }
+
+    .device-frame {
+      background: var(--paper);
+      border: 2px solid var(--ink);
+      border-radius: 28px;
+      padding: 0.8rem;
+      max-width: 360px;
+      margin: 0 auto;
+      box-shadow: 8px 8px 0 var(--ink);
+    }
+
+    .device-frame .screen {
+      background: white;
+      border-radius: 20px;
+      padding: 1.5rem 1.2rem;
+      font-family: 'Noto Sans JP', sans-serif;
+      min-height: 520px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .device-frame .screen::before {
+      content: 'SPLAI';
+      position: absolute;
+      top: 1.2rem;
+      left: 1.2rem;
+      font-family: 'Archivo Black', sans-serif;
+      font-size: 0.85rem;
+      letter-spacing: 0.05em;
+    }
+
+    .device-frame .screen::after {
+      content: '01';
+      position: absolute;
+      top: 1.2rem;
+      right: 1.2rem;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.7rem;
+      color: var(--red);
+      letter-spacing: 0.15em;
+    }
+
+    .device-frame .screen .group-card {
+      margin-top: 3rem;
+      border: 2px solid var(--ink);
+      padding: 1rem;
+      position: relative;
+    }
+
+    .device-frame .screen .group-card::before {
+      content: 'GROUP';
+      position: absolute;
+      top: -0.5rem;
+      left: 0.6rem;
+      background: white;
+      padding: 0 0.4rem;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.6rem;
+      letter-spacing: 0.2em;
+    }
+
+    .device-frame .screen .group-card h5 {
+      font-family: 'Noto Sans JP', sans-serif;
+      font-weight: 900;
+      font-size: 1.05rem;
+      margin: 0.2rem 0;
+    }
+
+    .device-frame .screen .group-card .meta {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.7rem;
+      letter-spacing: 0.05em;
+      color: var(--red);
+    }
+
+    .device-frame .screen .url-block {
+      background: var(--paper);
+      padding: 0.7rem 0.8rem;
+      margin-top: 1rem;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.7rem;
+      word-break: break-all;
+      border-left: 3px solid var(--red);
+    }
+
+    .device-frame .screen .actions {
+      margin-top: 1.5rem;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.5rem;
+    }
+
+    .device-frame .screen .actions button {
+      font-family: 'Noto Sans JP', sans-serif;
+      font-weight: 700;
+      font-size: 0.78rem;
+      padding: 0.7rem;
+      border: 2px solid var(--ink);
+      background: white;
+      cursor: pointer;
+      letter-spacing: 0.04em;
+    }
+
+    .device-frame .screen .actions button.primary {
+      background: var(--ink);
+      color: white;
+    }
+
+    .device-frame .screen .actions button.red {
+      background: var(--red);
+      color: white;
+      border-color: var(--red);
+    }
+
+    .device-frame .screen .footnote {
+      margin-top: 1.5rem;
+      padding-top: 0.8rem;
+      border-top: 1px solid var(--ink);
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.62rem;
+      letter-spacing: 0.1em;
+      color: var(--ink);
+      opacity: 0.6;
+    }
+
+    .device-frame .screen .ai-tag {
+      display: inline-block;
+      background: var(--red);
+      color: white;
+      font-family: 'Archivo Black', sans-serif;
+      font-size: 0.6rem;
+      letter-spacing: 0.2em;
+      padding: 0.2rem 0.4rem;
+      margin-top: 1rem;
+    }
+
+    /* ============ VOICE / TONE ============ */
+    .voice {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0;
+      column-gap: 0;
+      border-bottom: var(--rule);
+      padding-bottom: 2rem;
+    }
+
+    .voice .col {
+      padding: 1.5rem;
+      position: relative;
+    }
+
+    .voice .col + .col {
+      border-left: var(--rule-thin);
+    }
+
+    .voice h4 {
+      font-family: 'Noto Sans JP', sans-serif;
+      font-weight: 900;
+      font-size: 0.95rem;
+      letter-spacing: 0.1em;
+      margin-bottom: 0.8rem;
+    }
+
+    .voice h4 .red { color: var(--red); }
+
+    .voice .pair {
+      display: flex;
+      gap: 0.8rem;
+      align-items: flex-start;
+      padding: 0.5rem 0;
+      border-bottom: 1px dashed var(--ink);
+    }
+
+    .voice .pair .mark {
+      font-family: 'Archivo Black', sans-serif;
+      font-size: 1.2rem;
+      width: 1.5rem;
+      flex-shrink: 0;
+    }
+
+    .voice .pair.do .mark { color: var(--red); }
+    .voice .pair.dont .mark { color: var(--ink); opacity: 0.4; text-decoration: line-through; }
+
+    .voice .pair .text {
+      font-family: 'Noto Sans JP', sans-serif;
+      font-size: 0.85rem;
+      line-height: 1.5;
+    }
+
+    /* ============ COLOPHON ============ */
+    .colophon {
+      margin-top: 3rem;
+      padding-top: 1.5rem;
+      border-top: var(--rule-thick);
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 1.5rem;
+      align-items: center;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.7rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+    }
+
+    .colophon .center {
+      font-family: 'Archivo Black', sans-serif;
+      font-size: 1.1rem;
+      letter-spacing: 0.05em;
+      text-transform: none;
+    }
+
+    .colophon .right {
+      text-align: right;
+      color: var(--red);
+    }
+
+    /* responsive */
+    @media (max-width: 720px) {
+      .feature-block { grid-template-columns: 1fr; }
+      .specs { grid-template-columns: 1fr 1fr; }
+      .type-row { grid-template-columns: 1fr; gap: 0.8rem; }
+      .app-mock-wrap, .voice { grid-template-columns: 1fr; }
+      .voice .col + .col { border-left: none; border-top: var(--rule-thin); }
+      .masthead { grid-template-columns: 1fr; gap: 0.4rem; }
+      .hero .below { grid-template-columns: 1fr; }
+      .section-header { grid-template-columns: auto 1fr; }
+      .section-header .meta { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="magazine">
+
+    <!-- MASTHEAD -->
+    <div class="masthead">
+      <span class="vol">VOL. III</span>
+      <span>BRAND IDENTITY · NAMING FINAL</span>
+      <span class="red">2026 · 05 · 24</span>
+      <span class="feature">FEATURE</span>
+    </div>
+
+    <!-- HERO -->
+    <div class="hero">
+      <div class="meta-top">
+        <span>FEATURE / 01 — THE NAME</span>
+        <span class="right">▲ STORY 001</span>
+      </div>
+      <span class="kicker">割り勘 × <span class="red">A.I.</span> = ?</span>
+      <h1 class="wordmark">
+        <span class="pl">SPL</span><span class="ai">AI</span><span class="punct">.</span>
+      </h1>
+      <div class="below">
+        <p class="pronounce">
+          /<strong>splaɪ</strong>/ &nbsp;·&nbsp;
+          n. — <em>split</em> + <em>A.I.</em><br />
+          スプライ — 割り勘を、人工知能で、軽やかに。
+        </p>
+        <p class="right-meta">
+          5 LETTERS · 1 IDEA<br />
+          AI IS THE BRAND<br />
+          <span style="color: var(--red);">— FINAL DECISION —</span>
+        </p>
+      </div>
+    </div>
+
+    <!-- ========== SECTION 1: WHY THIS NAME ========== -->
+    <div class="section-header">
+      <span class="num">01</span>
+      <span class="label">なぜ、この名前か <span class="en">why splai</span></span>
+      <span class="meta">P. 002</span>
+    </div>
+
+    <div class="feature-block">
+      <p class="lead">
+        AI が、ただの<em>機能</em>ではなく、ブランドの<span class="red">心臓部</span>であることを、5文字で宣言する。
+      </p>
+
+      <div class="col">
+        <h4><span class="num">1.</span>CONCEPT FIT</h4>
+        <p>SPL + AI。SPLitwise でも SPLit でもなく、AI を分かちがたく組み込んだ綴り。本アプリの差別化軸 — 自然文入力・OCR・最適化 — のすべてが AI に依拠する事実を、名前で先に伝える。</p>
+      </div>
+
+      <div class="col">
+        <h4><span class="num">2.</span>MEMORABILITY</h4>
+        <p>母音二つ、子音三つ。発音は一音節 /splaɪ/、口の動きが小さく、SNS 上で口頭で言われたときに記憶に残る。商標衝突リスクも極小。</p>
+      </div>
+
+      <div class="col">
+        <h4><span class="num">3.</span>VISUAL IDENTITY</h4>
+        <p>"AI" の二文字が、ロゴの中で常に赤くハイライトされる構造。SPL[<span style="color:var(--red);">AI</span>] という視覚的記号が、そのままブランドアイコンになる。</p>
+      </div>
+    </div>
+
+    <!-- ========== SECTION 2: COLOR ========== -->
+    <div class="section-header">
+      <span class="num">02</span>
+      <span class="label">色彩設計 <span class="en">color system</span></span>
+      <span class="meta">P. 003</span>
+    </div>
+
+    <div class="specs">
+      <div class="spec-card">
+        <span class="num">— 01</span>
+        <div class="swatch dark" style="background: #0a0a0a;" data-hex="#0A0A0A"></div>
+        <div class="name">PRINT BLACK</div>
+        <div class="desc">本文・見出し・グリッド線。情報の主役。</div>
+      </div>
+      <div class="spec-card">
+        <span class="num">— 02</span>
+        <div class="swatch" style="background: #f4f1e8;" data-hex="#F4F1E8"></div>
+        <div class="name">PAPER CREAM</div>
+        <div class="desc">背景・余白。日本の上質紙の温度感。</div>
+      </div>
+      <div class="spec-card">
+        <span class="num">— 03</span>
+        <div class="swatch dark" style="background: #e8000c;" data-hex="#E8000C"></div>
+        <div class="name">SIGNAL RED</div>
+        <div class="desc">AI ハイライト・強調・エラー警告のみ。</div>
+      </div>
+      <div class="spec-card">
+        <span class="num">— 04</span>
+        <div class="swatch" style="background: #cfd0cc;" data-hex="#CFD0CC"></div>
+        <div class="name">RULE GREY</div>
+        <div class="desc">補助グリッド・無効状態・キャプション。</div>
+      </div>
+    </div>
+
+    <!-- ========== SECTION 3: TYPOGRAPHY ========== -->
+    <div class="section-header">
+      <span class="num">03</span>
+      <span class="label">タイポグラフィ <span class="en">type system</span></span>
+      <span class="meta">P. 004</span>
+    </div>
+
+    <div class="type-specimen">
+      <div class="type-row">
+        <div class="label">
+          DISPLAY / EN
+          <span class="name">Archivo Black</span>
+          <span class="red">— hero, wordmark</span>
+        </div>
+        <div class="specimen-archivo">SPLAI · split it.</div>
+      </div>
+      <div class="type-row">
+        <div class="label">
+          DISPLAY / JP
+          <span class="name">Noto Sans JP 900</span>
+          <span class="red">— headlines</span>
+        </div>
+        <div class="specimen-jp">割り勘を、AIで終わらせる。</div>
+      </div>
+      <div class="type-row">
+        <div class="label">
+          EDITORIAL
+          <span class="name">Shippori Mincho 700</span>
+          <span class="red">— quotes, leads</span>
+        </div>
+        <div class="specimen-mincho">「面倒な計算は、AIに渡しておきなよ」</div>
+      </div>
+      <div class="type-row">
+        <div class="label">
+          BODY / TECH
+          <span class="name">IBM Plex Mono</span>
+          <span class="red">— meta, captions, URLs</span>
+        </div>
+        <div class="specimen-mono">$ splai.app/g/7f3a9c2e-...<br />→ AI optimized · 3 transfers · settled</div>
+      </div>
+    </div>
+
+    <!-- ========== SECTION 4: APP MOCK ========== -->
+    <div class="section-header">
+      <span class="num">04</span>
+      <span class="label">アプリの第一印象 <span class="en">interface preview</span></span>
+      <span class="meta">P. 005</span>
+    </div>
+
+    <div class="app-mock-wrap">
+      <div class="app-mock-text">
+        <p class="quote">URL を共有し、レシートを撮り、文字を流し込む。それ以外、何もしない。</p>
+
+        <dt>POSITIONING</dt>
+        <dd>Wallica の "気軽さ" を継承し、Splitwise の "正確さ" を凌駕する。AI が透明に裏で働き、人間は飲み会の余韻だけを残す。</dd>
+
+        <dt>FIRST INTERACTION</dt>
+        <dd>グループ作成 → URL 発行 → LINE 共有。アプリ内で最も大事な瞬間は、最初の3タップで完了する。</dd>
+
+        <dt>DESIGN PRINCIPLES</dt>
+        <dd>① 余白で語る ② 赤は AI が動いている時だけ ③ Mono は "計算結果" の信頼を担う</dd>
+      </div>
+
+      <div class="device-frame">
+        <div class="screen">
+          <div class="group-card">
+            <div class="meta">3/15 · 5名</div>
+            <h5>渋谷飲み会 🍻</h5>
+          </div>
+
+          <div class="url-block">
+            splai.app/g/7f3a9c2e<br />
+            -8b1d-4f6e-bd92...
+          </div>
+
+          <div class="actions">
+            <button class="primary">LINEで共有</button>
+            <button>QRコード</button>
+            <button>コピー</button>
+            <button class="red">レシート📷</button>
+          </div>
+
+          <span class="ai-tag">▶ AI 入力モード</span>
+
+          <div class="footnote">
+            ⌘ POWERED BY CLAUDE SONNET 4.6<br />
+            ⌘ NO LOGIN · NO COOKIES · 180D AUTODELETE
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== SECTION 5: VOICE & TONE ========== -->
+    <div class="section-header">
+      <span class="num">05</span>
+      <span class="label">声と語り口 <span class="en">voice &amp; tone</span></span>
+      <span class="meta">P. 006</span>
+    </div>
+
+    <div class="voice">
+      <div class="col">
+        <h4><span class="red">DO</span> — そう書く</h4>
+        <div class="pair do">
+          <span class="mark">+</span>
+          <span class="text">「割り勘、終わってます。」<br />— 完了形・短文・体言止めで余韻を残す。</span>
+        </div>
+        <div class="pair do">
+          <span class="mark">+</span>
+          <span class="text">「Bさんは唐揚げ多めだったから、+¥500ね」<br />— 計算ではなく、会話の続きとして書く。</span>
+        </div>
+        <div class="pair do">
+          <span class="mark">+</span>
+          <span class="text">"AI が背後で、3回の送金で済む組み合わせを見つけました"<br />— AI の働きは事実として淡々と報告。</span>
+        </div>
+      </div>
+
+      <div class="col">
+        <h4>DON'T — そう書かない</h4>
+        <div class="pair dont">
+          <span class="mark">×</span>
+          <span class="text">「革新的な AI ✨ が、あなたの割り勘を再定義します!」<br />— 大仰な煽り、絵文字濫用、誇張表現。</span>
+        </div>
+        <div class="pair dont">
+          <span class="mark">×</span>
+          <span class="text">"Powered by cutting-edge GPT technology"<br />— モデル名を売りにしない。AIは透明であるべき。</span>
+        </div>
+        <div class="pair dont">
+          <span class="mark">×</span>
+          <span class="text">"Split bills smarter, faster, easier!"<br />— 比較級の連打、抽象的な利益訴求。</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- COLOPHON -->
+    <div class="colophon">
+      <span>EDITED · DESIGNED · CODED<br />WITH OPUS 4.7</span>
+      <span class="center">SPLAI <span style="color: var(--red);">/</span> 2026 —</span>
+      <span class="right">END OF VOL. III ▼</span>
+    </div>
+
+  </div>
+</body>
+</html>

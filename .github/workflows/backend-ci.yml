@@ -1,0 +1,36 @@
+name: Backend CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, develop]
+    paths: ['backend/**', '.github/workflows/backend-ci.yml']
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+      - name: Install dependencies
+        run: uv sync --frozen
+      - name: Lint
+        run: uv run ruff check .
+      - name: Format check
+        run: uv run ruff format --check .
+      - name: Test
+        run: uv run pytest -v
+        env:
+          # CI のテストは実 DB に接続しない。conftest.py が
+          # os.environ.setdefault で同じ値を入れる二重防御だが、明示することで
+          # APP_ENV が未設定でも .env.local を読まないことを保証する。
+          DATABASE_URL: postgresql+asyncpg://test:test@localhost/test
+          APP_ENV: test
+          ENV: test
