@@ -2,10 +2,10 @@
 // The added config here will be used whenever a users loads a page in their browser.
 // https://docs.sentry.io/platforms/javascript/guides/nextjs/
 
-import * as Sentry from "@sentry/nextjs";
+import * as Sentry from '@sentry/nextjs';
 
 Sentry.init({
-  dsn: "https://eb4ef7aae5cc0a28feafbcc256c82b38@o4511462447775744.ingest.us.sentry.io/4511462526943232",
+  dsn: 'https://eb4ef7aae5cc0a28feafbcc256c82b38@o4511462447775744.ingest.us.sentry.io/4511462526943232',
 
   // Add optional integrations for additional features
   integrations: [Sentry.replayIntegration()],

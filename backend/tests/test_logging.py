@@ -1,6 +1,7 @@
 import json
-import logging
+
 import structlog
+
 from app.logging_config import configure_logging
 
 

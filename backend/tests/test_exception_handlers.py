@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
 from app.exceptions.domain import GroupNotFound, RateLimitExceeded
 from app.exceptions.handlers import register_exception_handlers
 
