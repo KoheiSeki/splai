@@ -26,6 +26,8 @@ frontend/coverage/
 
 # Backend
 backend/__pycache__/
+__pycache__/
+*.pyc
 backend/.venv/
 backend/.pytest_cache/
 backend/.ruff_cache/
@@ -42,5 +44,3 @@ backend/*.egg-info/
 # claude.md
 CLAUDE.md
 
-# prettier
-.prettierrc
