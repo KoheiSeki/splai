@@ -2544,41 +2544,57 @@ jobs:
           ENV: test
 ```
 
-- [ ] **Step 4: 確認のため空PRを作成**
+- [ ] **Step 4: 確認用 PR を作成**
 
 ```bash
 git checkout -b ci-test
-echo "" >> README.md
-git add README.md
-git commit -m "test: trigger CI"
+git add .github/
+git commit -m "ci(infra): add CI workflows and PR template"
 git push origin ci-test
-gh pr create --title "Test CI" --body "Phase 0 CI smoke test" --base develop
+gh pr create --title "Phase 0: CI smoke test" \
+  --body "CI 起動と Branch Protection 用 status check 名(frontend / backend)の検証" \
+  --base develop
 ```
 
 > base ブランチは `develop`(規約 §1.3:feature → develop が基本フロー)。
 
-- [ ] **Step 5: GitHub 上で両 workflow が PASS することを確認**
+- [ ] **Step 5: PR の status check が出ること + 緑になることを確認**
 
-期待出力: `Frontend CI` `Backend CI` 両方が緑チェック。
+確認ポイント:
 
-- [ ] **Step 6: PR をクローズ(マージしない)、ブランチ削除**
+- PR の Checks タブに **`Frontend CI / frontend`** と **`Backend CI / backend`** が現れる
+  - 出ない → workflow YAML 構文エラーか、`.github/` が untracked のまま push されていないか確認
+- 両方緑になる
+  - 赤くなったらログを読んで反復修正(代表的な詰まり所:後述)
+
+> **代表的な後追い修正**:CI を初回投入したタイミングで以下も同時に整える必要が出やすい(実装中に judging される範囲が広がるため)。これらが本 task と同じ ci-test ブランチで累積するのは想定内:
+>
+> - **Prettier / Ruff の auto-fix**(format:check / lint で大量にエラーが出るので `npm run format` / `uv run ruff check --fix .` でまとめて適用)
+> - **`frontend/.prettierrc` を追跡対象に**(gitignore で除外していると CI が default 設定で動き、ローカルと結果が一致しない)
+> - **`tsconfig.json` の `exclude` 調整**(vitest.config.ts と Next.js build の型不整合が出るときに該当ファイルを exclude)
+> - **`__pycache__` ネスト除外**(`backend/__pycache__/` だけだと sub-dir に効かないので `__pycache__/` パターンに変更)
+> - **`docs/` と `CLAUDE.md` の追跡開始**(planning repo の本体が gitignore で除外されていた場合)
+> - **テスト用 env の明示**(workflow YAML の `env:` で `DATABASE_URL` / `APP_ENV=test` を渡し、本番 DB に向かないことを保証)
+
+- [ ] **Step 6: ci-test → develop に squash merge**
+
+CI が緑になり、横断的な後追い修正がすべて反映されたら、ブランチを develop に取り込む。**close ではなく merge**(規約 §1.3 の squash merge):
 
 ```bash
-gh pr close <pr-number> --delete-branch
+gh pr merge <pr-number> --squash --delete-branch \
+  --subject "ci(infra): bootstrap CI workflows and align repo conventions"
 ```
 
-- [ ] **Step 7: コミット(main ブランチ)**
+merge 後、ローカルの develop を最新化:
 
 ```bash
-git checkout main
-git add .github/
-git commit -m "ci(infra): add CI workflows and PR template"
-git push origin main
-# develop にも追従
 git checkout develop
-git merge main --ff-only
-git push origin develop
+git pull origin develop
 ```
+
+- [ ] **Step 7: develop → main は Task 22 までお預け**
+
+CI が緑になった develop を **すぐに main に流さない**。Task 21(README)/ Task 22(DoD + Branch Protection 本格化)を済ませた後に、Phase 0 の集大成として release PR を出す。
 
 ---
 
