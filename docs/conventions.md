@@ -349,14 +349,71 @@ from app.db.session import get_session
 - `params` / `searchParams` は **Promise**(Next 15)→ `await params` を忘れない
 - データ取得は Server Component なら `fetch` 直書き、Client なら axios(`@/lib/api-client`)
 
-### 6.5 命名
+### 6.5 命名・ディレクトリ構造(Frontend)
+
+#### 識別子の命名
 
 - 変数・関数: camelCase(`getUserName`)
-- React コンポーネント: PascalCase(`GroupCard`)
+- React コンポーネント: PascalCase(`GroupCard`)。**階層タグ(`Section` / `Block` / `Page` 等)の suffix は付けない**(階層は配置で表現する)
 - フック: `use` + camelCase(`useGroup`)
 - 型・interface: PascalCase(`GroupResponse`、prefix の `I` は付けない)
 - 定数: 場面に応じて。モジュールスコープで再代入しない真の定数のみ UPPER_SNAKE
 - 環境変数の参照: `env.NEXT_PUBLIC_API_BASE_URL`(`@/lib/env` 経由)
+
+#### ファイル名
+
+**全ファイル kebab-case**(suffix は `.test.ts(x)` のみ)。`.utils.ts` `.types.ts` `.hook.ts` `.section.tsx` 等の suffix は使わない — ディレクトリ位置で役割を表現する。
+
+| 種別 | ファイル名 | export 名 | 例 |
+|---|---|---|---|
+| Page(Next.js) | `page.tsx`(規約) | default export | `app/g/[uuid]/page.tsx` |
+| Component(全階層) | kebab-case + `.tsx` | PascalCase | `payment-form.tsx` exports `PaymentForm` |
+| Hook | `use-<name>.ts` | `use<Name>` | `use-group.ts` exports `useGroup` |
+| API client | `api.ts` | named exports(camelCase) | `features/groups/api.ts` exports `createGroup` |
+| Types | `types.ts` | named type exports | `features/payments/types.ts` exports `Payment` |
+| Pure utils | `<topic>.ts` | named exports | `utils/format.ts` exports `formatYen` |
+| Infra primitive | `<purpose>.ts` | named exports | `lib/api/client.ts` exports `apiClient` |
+| Test | `<source>.test.ts(x)` | (test 関数) | `payment-form.test.tsx` |
+
+#### ディレクトリ階層(feature-based)
+
+```
+frontend/
+├── app/                    # Next.js routing 専用(page / layout のみ、薄い shell)
+├── features/               # ★ ドメイン単位の自己完結スライス
+│   └── <domain>/           #   例: groups, payments, settlement
+│       ├── components/     #   feature 特化の UI(Section / Component 級)
+│       ├── hooks/          #   feature 特化の hooks
+│       ├── api.ts          #   その feature の HTTP ラッパ
+│       └── types.ts        #   その feature の型
+├── components/             # 共有 UI primitives(複数 feature が使う)
+├── hooks/                  # 共有 hooks(複数 feature が使う)
+├── utils/                  # ★ 純粋関数 helper(format, calc 等、副作用なし)
+└── lib/                    # ★ 副作用 / Web API 依存の infra primitives
+    ├── api/                #   axios インスタンス、生成型
+    ├── auth/               #   localStorage 低レベル
+    ├── env.ts
+    └── request-id.ts
+```
+
+**配置の判定**:
+- 「消えると影響する feature 数が **1 個** か?」→ `features/<X>/` 内に閉じる
+- 「**2 個以上** か?」→ 共有層(`components/` `hooks/` `utils/` `lib/`)へ
+- 「外部依存があるか(localStorage / fetch / process.env / 時刻 / random)?」→ `lib/`(infra)
+- 「pure(同じ入力 → 同じ出力)か?」→ `utils/`
+
+#### コンポーネント階層(語彙のみ、ディレクトリ強制なし)
+
+レビュー / 議論で使う語彙(物理ディレクトリでは強制しない):
+
+| 階層 | 役割 | 例 |
+|---|---|---|
+| **Page** | 完全な画面(Next.js routing entry) | `app/g/[uuid]/page.tsx` |
+| **Section** | ページ内の大きな区画 | `GroupDashboard`、`PaymentForm`(現在の Phase 1 はほぼ全部 Section 級) |
+| **Block** | Section の中で区切りたい中間階層(必要時のみ導入) | (Phase 3 以降) |
+| **Component(primitive)** | 単機能の UI 構成要素 | (Phase 2 以降の `Button`, `Input` 等) |
+
+階層が変わってもファイル名は変えない(ディレクトリ移動のみ)。これにより階層判断のリファクタが import 全箇所に波及しない。
 
 ### 6.6 やらないこと
 

@@ -73,33 +73,70 @@ splai/
 │       ├── test_payments_api.py                ← Task 9, 10, 11
 │       └── test_settlement_api.py              ← Task 12
 ├── frontend/
-│   ├── lib/
-│   │   ├── api/
-│   │   │   ├── client.ts                       ← 既存 api-client.ts を改名/活用
-│   │   │   └── schemas.gen.ts                  ← Task 14(自動生成、追跡対象)
-│   │   ├── auth/
-│   │   │   └── member-storage.ts               ← Task 15
-│   │   └── hooks/
-│   │       ├── use-group.ts                    ← Task 17
-│   │       └── use-member-storage.ts           ← Task 15
-│   ├── app/
-│   │   ├── page.tsx                            ← Modify(landing 化、Task 16)
+│   ├── app/                                    ← Next.js routing 専用(page / layout のみ)
+│   │   ├── page.tsx                            ← Modify(Landing、薄い shell。Task 16)
 │   │   └── g/
 │   │       └── [uuid]/
-│   │           ├── page.tsx                    ← Task 17
-│   │           └── components/                  ← Tasks 18-20
-│   │               ├── member-select.tsx
-│   │               ├── payment-form.tsx
-│   │               ├── payment-list.tsx
-│   │               └── settlement-view.tsx
+│   │           └── page.tsx                    ← Task 17(GroupDashboard を呼ぶだけ)
+│   ├── features/                               ← ★ ドメイン単位の機能スライス
+│   │   ├── groups/
+│   │   │   ├── components/
+│   │   │   │   ├── create-group-form.tsx       ← Task 16
+│   │   │   │   ├── group-dashboard.tsx         ← Task 17(/g/[uuid] の主要構造)
+│   │   │   │   └── member-select.tsx           ← Task 17
+│   │   │   ├── hooks/
+│   │   │   │   └── use-group.ts                ← Task 17
+│   │   │   ├── api.ts                          ← createGroup, getGroup, addMember
+│   │   │   └── types.ts                        ← group / member 型(必要時)
+│   │   ├── payments/
+│   │   │   ├── components/
+│   │   │   │   ├── payment-form.tsx            ← Task 18
+│   │   │   │   └── payment-list.tsx            ← Task 19
+│   │   │   ├── api.ts                          ← createPayment, deletePayment
+│   │   │   └── types.ts
+│   │   └── settlement/
+│   │       ├── components/
+│   │       │   └── settlement-view.tsx         ← Task 20
+│   │       ├── api.ts                          ← getSettlement
+│   │       └── types.ts
+│   ├── components/                             ← 共有 UI(Phase 1 では空、Phase 2 で primitives)
+│   ├── hooks/                                  ← ★ 共有 hooks(複数 feature 横断)
+│   │   └── use-member-storage.ts               ← Task 15
+│   ├── utils/                                  ← ★ 純粋関数 helper(format, calc 等)
+│   │   └── format.ts                           ← (必要時、formatYen / formatDate)
+│   ├── lib/                                    ← 副作用 / Web API 依存の infra primitives
+│   │   ├── api/
+│   │   │   ├── client.ts                       ← 既存 api-client.ts を改名
+│   │   │   └── schemas.gen.ts                  ← Task 14(自動生成、追跡対象)
+│   │   ├── auth/
+│   │   │   └── member-storage.ts               ← Task 15(localStorage 低レベル)
+│   │   ├── env.ts                              ← 既存
+│   │   └── request-id.ts                       ← 既存
 │   ├── package.json                            ← Modify(codegen script 追加)
-│   └── tests/
-│       ├── lib/auth/member-storage.test.ts     ← Task 15
-│       └── components/payment-form.test.tsx    ← Task 18 (smoke)
+│   └── tests/                                  ← ソース構造を mirror
+│       ├── features/
+│       │   └── payments/components/payment-form.test.tsx  ← Task 18(smoke)
+│       ├── hooks/
+│       │   └── use-member-storage.test.ts      ← Task 15
+│       └── lib/
+│           └── auth/member-storage.test.ts     ← Task 15(低レベル side)
 └── docs/
     └── superpowers/plans/
         └── 2026-05-29-phase-1-core-features.md  ← 本ファイル
 ```
+
+> **ディレクトリの役割分担**(規約 §6.5 と整合):
+>
+> | 階層 | 役割 | 例 |
+> |---|---|---|
+> | `app/` | Next.js routing(page / layout のみ。中身は features を呼ぶ薄い shell) | `app/g/[uuid]/page.tsx` |
+> | `features/<X>/` | **ドメイン単位の自己完結スライス**(components / hooks / api / types) | `features/payments/` |
+> | `components/` | **機能横断の共有 UI primitives**(Phase 1 では空、Phase 2 で `Button` 等を導入) | (将来) |
+> | `hooks/` | **複数 feature が使う共有 hooks** | `use-member-storage.ts` |
+> | `utils/` | **純粋関数 helper**(同じ入力 → 同じ出力、外部依存なし) | `format.ts`(formatYen, formatDate) |
+> | `lib/` | **副作用 / Web API 依存の infrastructure primitives** | axios インスタンス、localStorage、env 検証 |
+>
+> **共有 vs 機能特化の判定**:「このファイルが消えると影響する feature 数」が 1 個なら `features/<X>/`、2 個以上なら共有層(`hooks/` / `components/` / `utils/` / `lib/`)へ。
 
 ---
 
@@ -108,6 +145,7 @@ splai/
 ### Task 1: SQLAlchemy モデル(groups / members / payments / payment_shares)
 
 **Files:**
+
 - Create: `backend/app/models/__init__.py`
 - Create: `backend/app/models/group.py`
 - Create: `backend/app/models/member.py`
@@ -177,6 +215,7 @@ def test_payment_share_types():
 cd backend
 uv run pytest tests/test_models.py -v
 ```
+
 期待出力: `ModuleNotFoundError: No module named 'app.models'`
 
 - [ ] **Step 3: `app/models/__init__.py` を作成**
@@ -378,6 +417,7 @@ class PaymentShare(Base):
 ```bash
 uv run pytest tests/test_models.py -v
 ```
+
 期待出力: 4 passed.
 
 - [ ] **Step 9: コミット**
@@ -392,6 +432,7 @@ git commit -m "feat(backend): add SQLAlchemy models for groups, members, payment
 ### Task 2: Alembic マイグレーション(コアテーブル作成)
 
 **Files:**
+
 - Create: `backend/alembic/versions/<rev>_create_core_tables.py`(autogenerate)
 
 - [ ] **Step 1: alembic env.py が models をロードしているか確認**
@@ -399,6 +440,7 @@ git commit -m "feat(backend): add SQLAlchemy models for groups, members, payment
 ```bash
 grep -n "from app.models" backend/alembic/env.py
 ```
+
 出ていなければ env.py に `from app import models  # noqa: F401` を追加し、`Base.metadata` が models を認識するようにする。
 
 ```python
@@ -413,7 +455,9 @@ from app.db.base import Base
 cd backend
 uv run alembic revision --autogenerate -m "create core tables"
 ```
+
 生成された `backend/alembic/versions/<rev>_create_core_tables.py` を開いて確認:
+
 - `groups`, `members`, `payments`, `payment_shares` の `op.create_table(...)` が含まれること
 - ENUM 型(`payment_source`, `share_type`)も生成されていること
 
@@ -433,6 +477,7 @@ op.create_index("ix_payment_shares_payment_id", "payment_shares", ["payment_id"]
 ```bash
 uv run alembic upgrade head
 ```
+
 期待出力: `INFO  [alembic.runtime.migration] Running upgrade ... -> <rev>, create core tables`
 
 - [ ] **Step 5: Supabase Dashboard → Table Editor で 4 テーブルが存在することを目視確認**
@@ -451,6 +496,7 @@ git commit -m "feat(db): create core tables (groups, members, payments, payment_
 ### Task 3: 清算アルゴリズム(貪欲法、純粋関数)
 
 **Files:**
+
 - Create: `backend/app/services/__init__.py`
 - Create: `backend/app/services/settlement.py`
 - Create: `backend/tests/test_settlement.py`
@@ -506,6 +552,7 @@ def test_returns_immutable_result():
 ```bash
 uv run pytest tests/test_settlement.py -v
 ```
+
 期待出力: `ModuleNotFoundError: No module named 'app.services'`
 
 - [ ] **Step 3: `app/services/__init__.py` を作成**
@@ -586,6 +633,7 @@ def settle(net_balances: dict[UUID, int]) -> list[Transfer]:
 ```bash
 uv run pytest tests/test_settlement.py -v
 ```
+
 期待出力: 5 passed.
 
 - [ ] **Step 6: コミット**
@@ -600,6 +648,7 @@ git commit -m "feat(backend): add settlement greedy algorithm (pure function)"
 ### Task 4: X-Member-Id 認可(`Depends()` ベース)
 
 **Files:**
+
 - Create: `backend/app/auth/__init__.py`
 - Create: `backend/app/auth/deps.py`
 - Modify: `backend/app/exceptions/domain.py`(MemberMismatch は既存、念のため確認)
@@ -689,6 +738,7 @@ async def test_require_member_raises_when_member_in_different_group():
 ```bash
 uv run pytest tests/test_auth_deps.py -v
 ```
+
 期待出力: `ModuleNotFoundError: No module named 'app.auth'`
 
 - [ ] **Step 3: `app/auth/__init__.py` と `app/auth/deps.py` を実装**
@@ -752,6 +802,7 @@ async def require_member(
 ```bash
 uv run pytest tests/test_auth_deps.py -v
 ```
+
 期待出力: 2 passed.
 
 - [ ] **Step 5: コミット**
@@ -766,6 +817,7 @@ git commit -m "feat(auth): add require_member Depends for X-Member-Id validation
 ### Task 5: Pydantic スキーマ(Request / Response)
 
 **Files:**
+
 - Create: `backend/app/schemas/group.py`
 - Create: `backend/app/schemas/member.py`
 - Create: `backend/app/schemas/payment.py`
@@ -832,6 +884,7 @@ def test_create_payment_request_share_input():
 ```bash
 uv run pytest tests/test_schemas_camel.py -v
 ```
+
 期待出力: ImportError(モジュール未作成)
 
 - [ ] **Step 3: `app/schemas/group.py` 実装**
@@ -981,6 +1034,7 @@ class SettlementResponse(CamelModel):
 ```bash
 uv run pytest tests/test_schemas_camel.py -v
 ```
+
 期待出力: 3 passed.
 
 - [ ] **Step 8: コミット**
@@ -995,6 +1049,7 @@ git commit -m "feat(backend): add Pydantic schemas for groups/members/payments/s
 ### Task 6: API: `POST /api/groups`(グループ作成)
 
 **Files:**
+
 - Create: `backend/app/routers/groups.py`
 - Create: `backend/tests/test_groups_api.py`
 - Modify: `backend/app/main.py`(router 登録)
@@ -1049,6 +1104,7 @@ def test_create_group_validates_name_required():
 ```bash
 uv run pytest tests/test_groups_api.py -v
 ```
+
 期待出力: 404 になる(エンドポイント未実装)。
 
 - [ ] **Step 3: `app/routers/groups.py` 実装**
@@ -1122,6 +1178,7 @@ app.include_router(groups.router)
 ```bash
 uv run pytest tests/test_groups_api.py -v
 ```
+
 期待出力: 3 passed.
 
 - [ ] **Step 6: コミット**
@@ -1136,6 +1193,7 @@ git commit -m "feat(api): add POST /api/groups (create group with initial member
 ### Task 7: API: `GET /api/groups/{group_id}`(グループ詳細取得)
 
 **Files:**
+
 - Modify: `backend/app/routers/groups.py`(GET endpoint 追加)
 - Modify: `backend/tests/test_groups_api.py`
 
@@ -1181,6 +1239,7 @@ def test_get_group_returns_401_when_member_not_in_group():
 ```bash
 uv run pytest tests/test_groups_api.py::test_get_group_returns_full_payload -v
 ```
+
 期待出力: 405 か 404(エンドポイント未実装)。
 
 - [ ] **Step 3: `groups.py` に GET 実装**
@@ -1268,6 +1327,7 @@ async def get_group(
 ```bash
 uv run pytest tests/test_groups_api.py -v
 ```
+
 期待出力: 6 passed(Task 6 の 3 + 今回の 3)。
 
 - [ ] **Step 5: コミット**
@@ -1282,6 +1342,7 @@ git commit -m "feat(api): add GET /api/groups/{id} with X-Member-Id authorizatio
 ### Task 8: API: `POST /api/groups/{group_id}/members`(メンバー追加)
 
 **Files:**
+
 - Create: `backend/app/routers/members.py`
 - Create: `backend/tests/test_members_api.py`
 - Modify: `backend/app/main.py`
@@ -1399,6 +1460,7 @@ git commit -m "feat(api): add POST /api/groups/{id}/members"
 ### Task 9: API: `POST /api/groups/{group_id}/payments`(支払い登録)
 
 **Files:**
+
 - Create: `backend/app/routers/payments.py`
 - Create: `backend/tests/test_payments_api.py`
 - Modify: `backend/app/main.py`
@@ -1603,6 +1665,7 @@ git commit -m "feat(api): add POST /api/groups/{id}/payments with shares validat
 ### Task 10: API: `PATCH /api/payments/{payment_id}`(支払い編集)
 
 **Files:**
+
 - Modify: `backend/app/routers/payments.py`
 - Modify: `backend/tests/test_payments_api.py`
 
@@ -1749,6 +1812,7 @@ git commit -m "feat(api): add PATCH /api/payments/{id} for editing payments"
 ### Task 11: API: `DELETE /api/payments/{payment_id}`(論理削除)
 
 **Files:**
+
 - Modify: `backend/app/routers/payments.py`
 - Modify: `backend/tests/test_payments_api.py`
 
@@ -1818,6 +1882,7 @@ git commit -am "feat(api): add DELETE /api/payments/{id} (soft delete)"
 ### Task 12: API: `GET /api/groups/{group_id}/settlement`(清算結果)
 
 **Files:**
+
 - Create: `backend/app/routers/settlement.py`
 - Create: `backend/tests/test_settlement_api.py`
 - Modify: `backend/app/main.py`
@@ -1996,6 +2061,7 @@ git commit -m "feat(api): add GET /api/groups/{id}/settlement"
 ### Task 13: OpenAPI dump スクリプト
 
 **Files:**
+
 - Create: `backend/scripts/dump_openapi.py`
 - Create: `backend/openapi.json`(自動生成、コミット対象)
 - Modify: `backend/pyproject.toml`(scripts 設定は任意)
@@ -2046,6 +2112,7 @@ uv run python scripts/dump_openapi.py
 ls -la openapi.json
 head -10 openapi.json
 ```
+
 期待出力: `openapi.json` が生成され、`{"openapi": "3.x.x", "info": ..., "paths": ...}` で始まる。
 
 - [ ] **Step 3: pyproject.toml に script alias を追加(任意)**
@@ -2055,6 +2122,7 @@ head -10 openapi.json
 [project.scripts]
 dump-openapi = "scripts.dump_openapi:main"
 ```
+
 > 任意。これで `uv run dump-openapi` でも実行可能になる。
 
 - [ ] **Step 4: コミット**
@@ -2066,13 +2134,34 @@ git commit -m "feat(backend): add openapi.json dump script for frontend codegen"
 
 ---
 
-### Task 14: Frontend — Zod スキーマ自動生成
+### Task 14: Frontend — Zod スキーマ自動生成 + api-client 移動
 
 **Files:**
+
 - Modify: `frontend/package.json`(deps + script)
+- Move: `frontend/lib/api-client.ts` → `frontend/lib/api/client.ts`(import パス整理)
 - Create: `frontend/lib/api/schemas.gen.ts`(自動生成、追跡対象)
 
-- [ ] **Step 1: codegen ツールをインストール**
+- [ ] **Step 1: 既存 `api-client.ts` を `lib/api/client.ts` に移動**
+
+新しい構造(`lib/api/` ディレクトリ)に揃えるため、Phase 0 で作った `lib/api-client.ts` を移動する。中身の変更なし、import パスのみ揃える:
+
+```bash
+cd frontend
+mkdir -p lib/api
+git mv lib/api-client.ts lib/api/client.ts
+```
+
+既存の参照を更新(grep で確認):
+
+```bash
+grep -rn "@/lib/api-client" .
+# あれば @/lib/api/client にすべて置換
+```
+
+> Phase 0 時点では `lib/auth/`, `lib/env.ts`, `lib/request-id.ts` のみ存在。`lib/api/` を新設して client.ts を入れる。
+
+- [ ] **Step 2: codegen ツールをインストール**
 
 ```bash
 cd frontend
@@ -2096,6 +2185,7 @@ npm run codegen
 ls -la lib/api/schemas.gen.ts
 head -30 lib/api/schemas.gen.ts
 ```
+
 期待出力: `lib/api/schemas.gen.ts` が生成され、Zod スキーマと型定義が含まれる。
 
 - [ ] **Step 4: 動作確認(import エラーが無いこと)**
@@ -2103,14 +2193,17 @@ head -30 lib/api/schemas.gen.ts
 ```bash
 npm run typecheck
 ```
+
 期待出力: pass。
 
 - [ ] **Step 5: 生成ファイルを Prettier 対象から除外(任意)**
 
 `.prettierignore` を作成または追記:
+
 ```
 lib/api/schemas.gen.ts
 ```
+
 これで `npm run format:check` が生成ファイルを評価しない。
 
 - [ ] **Step 6: コミット**
@@ -2124,42 +2217,45 @@ git commit -m "feat(frontend): generate Zod schemas from backend OpenAPI"
 
 ### Task 15: Frontend — メンバー識別ストレージ
 
+> **配置方針**: localStorage を直接触る低レベル関数は `lib/auth/`(infra primitive)、React hook は `hooks/`(共有 hook、複数 feature が使う)。同じ責務を 2 層に分割する理由は、低レベル関数が SSR / テスト環境で React に依存せず単体テストできるため。
+
 **Files:**
-- Create: `frontend/lib/auth/member-storage.ts`
-- Create: `frontend/lib/hooks/use-member-storage.ts`
+
+- Create: `frontend/lib/auth/member-storage.ts`(localStorage 低レベル)
+- Create: `frontend/hooks/use-member-storage.ts`(React hook、共有層)
 - Create: `frontend/tests/lib/auth/member-storage.test.ts`
 
 - [ ] **Step 1: 失敗するテストを書く**
 
 ```typescript
 // frontend/tests/lib/auth/member-storage.test.ts
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from "vitest";
 import {
   getMemberId,
   setMemberId,
   clearMemberId,
-} from '@/lib/auth/member-storage';
+} from "@/lib/auth/member-storage";
 
-describe('member-storage', () => {
+describe("member-storage", () => {
   beforeEach(() => {
     localStorage.clear();
   });
 
-  it('returns null when no member id stored for group', () => {
-    expect(getMemberId('group-1')).toBeNull();
+  it("returns null when no member id stored for group", () => {
+    expect(getMemberId("group-1")).toBeNull();
   });
 
-  it('stores and retrieves member id per group', () => {
-    setMemberId('group-1', 'member-a');
-    setMemberId('group-2', 'member-b');
-    expect(getMemberId('group-1')).toBe('member-a');
-    expect(getMemberId('group-2')).toBe('member-b');
+  it("stores and retrieves member id per group", () => {
+    setMemberId("group-1", "member-a");
+    setMemberId("group-2", "member-b");
+    expect(getMemberId("group-1")).toBe("member-a");
+    expect(getMemberId("group-2")).toBe("member-b");
   });
 
-  it('clears member id for specific group', () => {
-    setMemberId('group-1', 'member-a');
-    clearMemberId('group-1');
-    expect(getMemberId('group-1')).toBeNull();
+  it("clears member id for specific group", () => {
+    setMemberId("group-1", "member-a");
+    clearMemberId("group-1");
+    expect(getMemberId("group-1")).toBeNull();
   });
 });
 ```
@@ -2178,33 +2274,33 @@ npx vitest run tests/lib/auth/member-storage.test.ts
  * グループ単位のメンバー ID を localStorage で保持(設計書 §2)。
  * キー: g_<group_id>
  */
-const KEY_PREFIX = 'g_';
+const KEY_PREFIX = "g_";
 
 export function getMemberId(groupId: string): string | null {
-  if (typeof window === 'undefined') return null;
+  if (typeof window === "undefined") return null;
   return localStorage.getItem(`${KEY_PREFIX}${groupId}`);
 }
 
 export function setMemberId(groupId: string, memberId: string): void {
-  if (typeof window === 'undefined') return;
+  if (typeof window === "undefined") return;
   localStorage.setItem(`${KEY_PREFIX}${groupId}`, memberId);
 }
 
 export function clearMemberId(groupId: string): void {
-  if (typeof window === 'undefined') return;
+  if (typeof window === "undefined") return;
   localStorage.removeItem(`${KEY_PREFIX}${groupId}`);
 }
 ```
 
 ```typescript
-// frontend/lib/hooks/use-member-storage.ts
-'use client';
-import { useCallback, useEffect, useState } from 'react';
+// frontend/hooks/use-member-storage.ts
+"use client";
+import { useCallback, useEffect, useState } from "react";
 import {
   clearMemberId,
   getMemberId,
   setMemberId,
-} from '@/lib/auth/member-storage';
+} from "@/lib/auth/member-storage";
 
 export function useMemberStorage(groupId: string) {
   const [memberId, _setMemberId] = useState<string | null>(null);
@@ -2240,7 +2336,7 @@ npx vitest run tests/lib/auth/member-storage.test.ts
 - [ ] **Step 5: コミット**
 
 ```bash
-git add frontend/lib/auth/ frontend/lib/hooks/use-member-storage.ts \
+git add frontend/lib/auth/ frontend/hooks/use-member-storage.ts \
   frontend/tests/lib/auth/
 git commit -m "feat(frontend): add localStorage-backed member identification"
 ```
@@ -2250,16 +2346,18 @@ git commit -m "feat(frontend): add localStorage-backed member identification"
 ### Task 16: Frontend — Landing page(グループ作成フォーム)
 
 **Files:**
-- Modify: `frontend/app/page.tsx`(Hello画面 → 作成フォームに置き換え)
-- Create: `frontend/app/components/create-group-form.tsx`
-- Create: `frontend/lib/api/groups.ts`(API ラッパ)
 
-- [ ] **Step 1: API ラッパを実装**
+- Modify: `frontend/app/page.tsx`(Hello画面 → Landing shell に置き換え、薄い)
+- Create: `frontend/features/groups/components/create-group-form.tsx`
+- Create: `frontend/features/groups/api.ts`(API ラッパ — feature 内に閉じる)
+- Create: `frontend/features/groups/types.ts`(Group / Member 型 — 必要時)
+
+- [ ] **Step 1: API ラッパを feature 内に実装**
 
 ```typescript
-// frontend/lib/api/groups.ts
-'use client';
-import { apiClient } from '@/lib/api-client';
+// frontend/features/groups/api.ts
+"use client";
+import { apiClient } from "@/lib/api/client";
 
 export type CreateGroupInput = {
   name: string;
@@ -2279,7 +2377,7 @@ export type CreateGroupResponse = {
 export async function createGroup(
   input: CreateGroupInput,
 ): Promise<CreateGroupResponse> {
-  const res = await apiClient.post<CreateGroupResponse>('/api/groups', input);
+  const res = await apiClient.post<CreateGroupResponse>("/api/groups", input);
   return res.data;
 }
 ```
@@ -2287,18 +2385,18 @@ export async function createGroup(
 - [ ] **Step 2: フォームコンポーネント実装**
 
 ```tsx
-// frontend/app/components/create-group-form.tsx
-'use client';
-import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+// frontend/features/groups/components/create-group-form.tsx
+"use client";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 
-import { createGroup } from '@/lib/api/groups';
-import { setMemberId } from '@/lib/auth/member-storage';
+import { createGroup } from "@/features/groups/api";
+import { setMemberId } from "@/lib/auth/member-storage";
 
 export function CreateGroupForm() {
   const router = useRouter();
-  const [name, setName] = useState('');
-  const [members, setMembers] = useState(['', '']);
+  const [name, setName] = useState("");
+  const [members, setMembers] = useState(["", ""]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -2307,7 +2405,9 @@ export function CreateGroupForm() {
     setError(null);
     setSubmitting(true);
     try {
-      const memberNames = members.map((s) => s.trim()).filter((s) => s.length > 0);
+      const memberNames = members
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
       const res = await createGroup({ name: name.trim(), memberNames });
       if (res.creatorMemberId) {
         setMemberId(res.id, res.creatorMemberId);
@@ -2323,7 +2423,9 @@ export function CreateGroupForm() {
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-4 max-w-md w-full">
       <label className="flex flex-col gap-1">
-        <span className="font-jp-display text-xs tracking-widest">GROUP NAME</span>
+        <span className="font-jp-display text-xs tracking-widest">
+          GROUP NAME
+        </span>
         <input
           className="border-2 border-ink p-2 bg-paper font-mono"
           value={name}
@@ -2334,14 +2436,18 @@ export function CreateGroupForm() {
       </label>
 
       <fieldset className="flex flex-col gap-1">
-        <legend className="font-jp-display text-xs tracking-widest">MEMBERS</legend>
+        <legend className="font-jp-display text-xs tracking-widest">
+          MEMBERS
+        </legend>
         {members.map((m, i) => (
           <input
             key={i}
             className="border-2 border-ink p-2 bg-paper font-mono"
             value={m}
             onChange={(e) =>
-              setMembers((prev) => prev.map((v, idx) => (idx === i ? e.target.value : v)))
+              setMembers((prev) =>
+                prev.map((v, idx) => (idx === i ? e.target.value : v)),
+              )
             }
             placeholder={`Member ${i + 1}`}
             maxLength={50}
@@ -2350,7 +2456,7 @@ export function CreateGroupForm() {
         <button
           type="button"
           className="font-mono text-xs underline self-start"
-          onClick={() => setMembers((p) => [...p, ''])}
+          onClick={() => setMembers((p) => [...p, ""])}
         >
           + add member
         </button>
@@ -2361,7 +2467,7 @@ export function CreateGroupForm() {
         disabled={submitting || !name.trim()}
         className="bg-ink text-paper font-display p-3 disabled:opacity-50"
       >
-        {submitting ? '...' : 'CREATE'}
+        {submitting ? "..." : "CREATE"}
       </button>
 
       {error && <p className="text-red font-mono text-xs">{error}</p>}
@@ -2370,11 +2476,11 @@ export function CreateGroupForm() {
 }
 ```
 
-- [ ] **Step 3: `app/page.tsx` を Landing 化**
+- [ ] **Step 3: `app/page.tsx` を Landing 化(features を呼ぶ薄い shell)**
 
 ```tsx
 // frontend/app/page.tsx
-import { CreateGroupForm } from './components/create-group-form';
+import { CreateGroupForm } from "@/features/groups/components/create-group-form";
 
 export default function Home() {
   return (
@@ -2402,7 +2508,7 @@ npm run dev
 - [ ] **Step 5: コミット**
 
 ```bash
-git add frontend/app/page.tsx frontend/app/components/ frontend/lib/api/groups.ts
+git add frontend/app/page.tsx frontend/features/groups/
 git commit -m "feat(frontend): replace landing page with create group form"
 ```
 
@@ -2410,19 +2516,23 @@ git commit -m "feat(frontend): replace landing page with create group form"
 
 ### Task 17: Frontend — `/g/[uuid]` page(メンバー選択 / ダッシュボード)
 
-**Files:**
-- Create: `frontend/app/g/[uuid]/page.tsx`
-- Create: `frontend/app/g/[uuid]/components/member-select.tsx`
-- Create: `frontend/lib/hooks/use-group.ts`
+> **配置方針**:`app/g/[uuid]/page.tsx` は **薄い shell**(routing 入口のみ)。実体である `GroupDashboard`(Section 級コンポーネント)は `features/groups/components/` に置く。これで group ロジックの import パスが Landing(Task 16)と Group ページで一貫し、また Phase 2 で /g/[uuid]/share 等が増えても dashboard の場所が動かない。
 
-- [ ] **Step 1: グループ取得 hook 実装**
+**Files:**
+
+- Create: `frontend/app/g/[uuid]/page.tsx`(薄い shell)
+- Create: `frontend/features/groups/components/group-dashboard.tsx`(主構造、Section 級)
+- Create: `frontend/features/groups/components/member-select.tsx`
+- Create: `frontend/features/groups/hooks/use-group.ts`
+
+- [ ] **Step 1: グループ取得 hook を feature 内に実装**
 
 ```typescript
-// frontend/lib/hooks/use-group.ts
-'use client';
-import { useEffect, useState } from 'react';
+// frontend/features/groups/hooks/use-group.ts
+"use client";
+import { useEffect, useState } from "react";
 
-import { apiClient } from '@/lib/api-client';
+import { apiClient } from "@/lib/api/client";
 
 export type GroupData = {
   id: string;
@@ -2451,7 +2561,7 @@ export function useGroup(groupId: string, memberId: string | null) {
     setLoading(true);
     try {
       const res = await apiClient.get<GroupData>(`/api/groups/${groupId}`, {
-        headers: { 'X-Member-Id': memberId },
+        headers: { "X-Member-Id": memberId },
       });
       setData(res.data);
       setError(null);
@@ -2474,11 +2584,11 @@ export function useGroup(groupId: string, memberId: string | null) {
 - [ ] **Step 2: member-select コンポーネント実装**
 
 ```tsx
-// frontend/app/g/[uuid]/components/member-select.tsx
-'use client';
-import { useState } from 'react';
+// frontend/features/groups/components/member-select.tsx
+"use client";
+import { useState } from "react";
 
-import { apiClient } from '@/lib/api-client';
+import { apiClient } from "@/lib/api/client";
 
 type Props = {
   groupId: string;
@@ -2487,7 +2597,7 @@ type Props = {
 };
 
 export function MemberSelect({ groupId, members, onSelect }: Props) {
-  const [newName, setNewName] = useState('');
+  const [newName, setNewName] = useState("");
   const [adding, setAdding] = useState(false);
 
   async function addMember() {
@@ -2500,13 +2610,15 @@ export function MemberSelect({ groupId, members, onSelect }: Props) {
       if (!actor) {
         // メンバーが 1 人もいない初期状態(memberNames=[] で作成したケース)
         // POST /members は X-Member-Id 必須なので、Phase 5 で「初回限定の wildcard」を検討
-        alert('No initial member exists. Use the create form to add at least one.');
+        alert(
+          "No initial member exists. Use the create form to add at least one.",
+        );
         return;
       }
       const res = await apiClient.post<{ id: string; name: string }>(
         `/api/groups/${groupId}/members`,
         { name: newName.trim() },
-        { headers: { 'X-Member-Id': actor } },
+        { headers: { "X-Member-Id": actor } },
       );
       onSelect(res.data.id);
     } finally {
@@ -2554,28 +2666,24 @@ export function MemberSelect({ groupId, members, onSelect }: Props) {
 }
 ```
 
-- [ ] **Step 3: page.tsx 実装**
+- [ ] **Step 3: GroupDashboard 実装(主構造、Section 級)**
 
 ```tsx
-// frontend/app/g/[uuid]/page.tsx
-'use client';
-import { use } from 'react';
+// frontend/features/groups/components/group-dashboard.tsx
+"use client";
 
-import { useGroup } from '@/lib/hooks/use-group';
-import { useMemberStorage } from '@/lib/hooks/use-member-storage';
+import { useGroup } from "@/features/groups/hooks/use-group";
+import { useMemberStorage } from "@/hooks/use-member-storage";
 
-import { MemberSelect } from './components/member-select';
-// 後の Task で追加されるコンポーネント
-// import { PaymentForm } from './components/payment-form';
-// import { PaymentList } from './components/payment-list';
-// import { SettlementView } from './components/settlement-view';
+import { MemberSelect } from "./member-select";
+// 後の Task で追加されるコンポーネント:
+// import { PaymentForm } from '@/features/payments/components/payment-form';
+// import { PaymentList } from '@/features/payments/components/payment-list';
+// import { SettlementView } from '@/features/settlement/components/settlement-view';
 
-export default function GroupPage({
-  params,
-}: {
-  params: Promise<{ uuid: string }>;
-}) {
-  const { uuid: groupId } = use(params);
+type Props = { groupId: string };
+
+export function GroupDashboard({ groupId }: Props) {
   const { memberId, setMemberId } = useMemberStorage(groupId);
   const { data, loading, reload } = useGroup(groupId, memberId);
 
@@ -2625,14 +2733,32 @@ export default function GroupPage({
 }
 ```
 
+- [ ] **Step 4: page.tsx は薄い routing shell として実装**
+
+```tsx
+// frontend/app/g/[uuid]/page.tsx
+import { use } from "react";
+
+import { GroupDashboard } from "@/features/groups/components/group-dashboard";
+
+export default function GroupPage({
+  params,
+}: {
+  params: Promise<{ uuid: string }>;
+}) {
+  const { uuid } = use(params);
+  return <GroupDashboard groupId={uuid} />;
+}
+```
+
 > **Phase 1 の `useGroup` 制約**:`GET /api/groups/{id}` は `X-Member-Id` 必須なので、メンバー未選択時は呼べない。member 選択画面で表示するメンバー一覧は本来別経路(public 取得)で取るべき。MVP では「URL を共有された先で member_names が知られている」前提で、初回アクセス時は `data` が空でも MemberSelect を表示し、新規追加できるようにする。Phase 5 で public な GET を追加するか、認可方針を見直す。
 
-- [ ] **Step 4: 動作確認(Task 16 で作成したグループに遷移できること)**
+- [ ] **Step 5: 動作確認(Task 16 で作成したグループに遷移できること)**
 
-- [ ] **Step 5: コミット**
+- [ ] **Step 6: コミット**
 
 ```bash
-git add frontend/app/g/ frontend/lib/hooks/use-group.ts
+git add frontend/app/g/ frontend/features/groups/
 git commit -m "feat(frontend): add /g/[uuid] page with member selection"
 ```
 
@@ -2641,23 +2767,29 @@ git commit -m "feat(frontend): add /g/[uuid] page with member selection"
 ### Task 18: Frontend — Payment Form(支払い入力)
 
 **Files:**
-- Create: `frontend/app/g/[uuid]/components/payment-form.tsx`
-- Modify: `frontend/app/g/[uuid]/page.tsx`(form を組み込み)
-- Create: `frontend/lib/api/payments.ts`
 
-- [ ] **Step 1: API ラッパ**
+- Create: `frontend/features/payments/api.ts`
+- Create: `frontend/features/payments/components/payment-form.tsx`
+- Create: `frontend/features/payments/types.ts`(必要時)
+- Modify: `frontend/features/groups/components/group-dashboard.tsx`(form を組み込み)
+
+- [ ] **Step 1: API ラッパ(payments feature 内)**
 
 ```typescript
-// frontend/lib/api/payments.ts
-'use client';
-import { apiClient } from '@/lib/api-client';
+// frontend/features/payments/api.ts
+"use client";
+import { apiClient } from "@/lib/api/client";
 
 export type CreatePaymentInput = {
   payerId: string;
   amount: number;
   description: string;
   paidAt?: string;
-  shares: { memberId: string; shareType: 'equal' | 'amount'; shareValue: number }[];
+  shares: {
+    memberId: string;
+    shareType: "equal" | "amount";
+    shareValue: number;
+  }[];
 };
 
 export async function createPayment(
@@ -2665,11 +2797,9 @@ export async function createPayment(
   memberId: string,
   input: CreatePaymentInput,
 ) {
-  const res = await apiClient.post(
-    `/api/groups/${groupId}/payments`,
-    input,
-    { headers: { 'X-Member-Id': memberId } },
-  );
+  const res = await apiClient.post(`/api/groups/${groupId}/payments`, input, {
+    headers: { "X-Member-Id": memberId },
+  });
   return res.data;
 }
 
@@ -2679,7 +2809,7 @@ export async function deletePayment(
   memberId: string,
 ) {
   await apiClient.delete(`/api/payments/${paymentId}`, {
-    headers: { 'X-Member-Id': memberId, 'X-Group-Id': groupId },
+    headers: { "X-Member-Id": memberId, "X-Group-Id": groupId },
   });
 }
 ```
@@ -2687,11 +2817,11 @@ export async function deletePayment(
 - [ ] **Step 2: PaymentForm 実装**
 
 ```tsx
-// frontend/app/g/[uuid]/components/payment-form.tsx
-'use client';
-import { useState } from 'react';
+// frontend/features/payments/components/payment-form.tsx
+"use client";
+import { useState } from "react";
 
-import { createPayment } from '@/lib/api/payments';
+import { createPayment } from "@/features/payments/api";
 
 type Member = { id: string; name: string };
 
@@ -2704,8 +2834,8 @@ type Props = {
 
 export function PaymentForm({ groupId, memberId, members, onCreated }: Props) {
   const [payerId, setPayerId] = useState(memberId);
-  const [amount, setAmount] = useState('');
-  const [description, setDescription] = useState('');
+  const [amount, setAmount] = useState("");
+  const [description, setDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
@@ -2720,12 +2850,12 @@ export function PaymentForm({ groupId, memberId, members, onCreated }: Props) {
         description,
         shares: members.map((m) => ({
           memberId: m.id,
-          shareType: 'equal',
+          shareType: "equal",
           shareValue: 1.0,
         })),
       });
-      setAmount('');
-      setDescription('');
+      setAmount("");
+      setDescription("");
       onCreated();
     } finally {
       setSubmitting(false);
@@ -2786,19 +2916,19 @@ export function PaymentForm({ groupId, memberId, members, onCreated }: Props) {
         disabled={submitting}
         className="bg-ink text-paper font-display p-2 disabled:opacity-50"
       >
-        {submitting ? '...' : 'ADD'}
+        {submitting ? "..." : "ADD"}
       </button>
     </form>
   );
 }
 ```
 
-- [ ] **Step 3: page.tsx に組み込み**
+- [ ] **Step 3: GroupDashboard に組み込み**
 
-`page.tsx` のダッシュボード部分を以下に差し替え:
+`features/groups/components/group-dashboard.tsx` のダッシュボード部分(loading 後の `<main>` 内)に追加:
 
 ```tsx
-import { PaymentForm } from './components/payment-form';
+import { PaymentForm } from "@/features/payments/components/payment-form";
 ...
 <section className="flex flex-col gap-4">
   <PaymentForm
@@ -2813,7 +2943,7 @@ import { PaymentForm } from './components/payment-form';
 - [ ] **Step 4: 動作確認 + コミット**
 
 ```bash
-git add frontend/app/g/ frontend/lib/api/payments.ts
+git add frontend/features/
 git commit -m "feat(frontend): add payment input form (equal split MVP)"
 ```
 
@@ -2822,17 +2952,18 @@ git commit -m "feat(frontend): add payment input form (equal split MVP)"
 ### Task 19: Frontend — Payment List(支払い一覧 + 削除)
 
 **Files:**
-- Create: `frontend/app/g/[uuid]/components/payment-list.tsx`
-- Modify: `frontend/app/g/[uuid]/page.tsx`
+
+- Create: `frontend/features/payments/components/payment-list.tsx`
+- Modify: `frontend/features/groups/components/group-dashboard.tsx`
 
 - [ ] **Step 1: PaymentList 実装**
 
 ```tsx
-// frontend/app/g/[uuid]/components/payment-list.tsx
-'use client';
-import { useState } from 'react';
+// frontend/features/payments/components/payment-list.tsx
+"use client";
+import { useState } from "react";
 
-import { deletePayment } from '@/lib/api/payments';
+import { deletePayment } from "@/features/payments/api";
 
 type Payment = {
   id: string;
@@ -2852,13 +2983,19 @@ type Props = {
   onChange: () => void;
 };
 
-export function PaymentList({ groupId, memberId, members, payments, onChange }: Props) {
+export function PaymentList({
+  groupId,
+  memberId,
+  members,
+  payments,
+  onChange,
+}: Props) {
   const memberName = (id: string) =>
-    members.find((m) => m.id === id)?.name ?? '?';
+    members.find((m) => m.id === id)?.name ?? "?";
   const [deleting, setDeleting] = useState<string | null>(null);
 
   async function onDelete(paymentId: string) {
-    if (!confirm('この支払いを削除しますか?')) return;
+    if (!confirm("この支払いを削除しますか?")) return;
     setDeleting(paymentId);
     try {
       await deletePayment(paymentId, groupId, memberId);
@@ -2875,21 +3012,29 @@ export function PaymentList({ groupId, memberId, members, payments, onChange }: 
   return (
     <ul className="flex flex-col divide-y divide-rule-grey">
       {payments.map((p) => (
-        <li key={p.id} className="py-2 flex items-baseline justify-between gap-2">
+        <li
+          key={p.id}
+          className="py-2 flex items-baseline justify-between gap-2"
+        >
           <div className="flex flex-col">
-            <span className="font-jp-display text-sm">{p.description || '(no description)'}</span>
+            <span className="font-jp-display text-sm">
+              {p.description || "(no description)"}
+            </span>
             <span className="font-mono text-xs text-rule-grey">
-              {memberName(p.payerId)} · {new Date(p.paidAt).toLocaleDateString('ja-JP')}
+              {memberName(p.payerId)} ·{" "}
+              {new Date(p.paidAt).toLocaleDateString("ja-JP")}
             </span>
           </div>
           <div className="flex items-baseline gap-3">
-            <span className="font-mono text-base">¥{p.amount.toLocaleString()}</span>
+            <span className="font-mono text-base">
+              ¥{p.amount.toLocaleString()}
+            </span>
             <button
               onClick={() => onDelete(p.id)}
               disabled={deleting === p.id}
               className="font-mono text-xs underline text-rule-grey"
             >
-              {deleting === p.id ? '...' : 'delete'}
+              {deleting === p.id ? "..." : "delete"}
             </button>
           </div>
         </li>
@@ -2899,10 +3044,12 @@ export function PaymentList({ groupId, memberId, members, payments, onChange }: 
 }
 ```
 
-- [ ] **Step 2: page.tsx に組み込み + コミット**
+- [ ] **Step 2: GroupDashboard に組み込み + コミット**
+
+`features/groups/components/group-dashboard.tsx` の `<main>` 内に追加:
 
 ```tsx
-import { PaymentList } from './components/payment-list';
+import { PaymentList } from "@/features/payments/components/payment-list";
 ...
 <PaymentList
   groupId={groupId}
@@ -2910,11 +3057,11 @@ import { PaymentList } from './components/payment-list';
   members={data.members}
   payments={data.payments}
   onChange={reload}
-/>
+/>;
 ```
 
 ```bash
-git add frontend/app/g/
+git add frontend/features/
 git commit -m "feat(frontend): add payment list with soft delete"
 ```
 
@@ -2923,16 +3070,18 @@ git commit -m "feat(frontend): add payment list with soft delete"
 ### Task 20: Frontend — Settlement View(清算結果)
 
 **Files:**
-- Create: `frontend/app/g/[uuid]/components/settlement-view.tsx`
-- Create: `frontend/lib/api/settlement.ts`
-- Modify: `frontend/app/g/[uuid]/page.tsx`
 
-- [ ] **Step 1: API ラッパ**
+- Create: `frontend/features/settlement/api.ts`
+- Create: `frontend/features/settlement/components/settlement-view.tsx`
+- Create: `frontend/features/settlement/types.ts`(必要時)
+- Modify: `frontend/features/groups/components/group-dashboard.tsx`(統合最終形)
+
+- [ ] **Step 1: API ラッパ(settlement feature 内)**
 
 ```typescript
-// frontend/lib/api/settlement.ts
-'use client';
-import { apiClient } from '@/lib/api-client';
+// frontend/features/settlement/api.ts
+"use client";
+import { apiClient } from "@/lib/api/client";
 
 export type Settlement = {
   transfers: { fromId: string; toId: string; amount: number }[];
@@ -2945,7 +3094,7 @@ export async function getSettlement(
 ): Promise<Settlement> {
   const res = await apiClient.get<Settlement>(
     `/api/groups/${groupId}/settlement`,
-    { headers: { 'X-Member-Id': memberId } },
+    { headers: { "X-Member-Id": memberId } },
   );
   return res.data;
 }
@@ -2954,11 +3103,11 @@ export async function getSettlement(
 - [ ] **Step 2: コンポーネント**
 
 ```tsx
-// frontend/app/g/[uuid]/components/settlement-view.tsx
-'use client';
-import { useEffect, useState } from 'react';
+// frontend/features/settlement/components/settlement-view.tsx
+"use client";
+import { useEffect, useState } from "react";
 
-import { getSettlement, type Settlement } from '@/lib/api/settlement';
+import { getSettlement, type Settlement } from "@/features/settlement/api";
 
 type Member = { id: string; name: string };
 
@@ -2969,7 +3118,12 @@ type Props = {
   refreshKey: number;
 };
 
-export function SettlementView({ groupId, memberId, members, refreshKey }: Props) {
+export function SettlementView({
+  groupId,
+  memberId,
+  members,
+  refreshKey,
+}: Props) {
   const [data, setData] = useState<Settlement | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -2980,7 +3134,7 @@ export function SettlementView({ groupId, memberId, members, refreshKey }: Props
       .finally(() => setLoading(false));
   }, [groupId, memberId, refreshKey]);
 
-  const name = (id: string) => members.find((m) => m.id === id)?.name ?? '?';
+  const name = (id: string) => members.find((m) => m.id === id)?.name ?? "?";
 
   if (loading) return <p className="font-mono text-xs">loading...</p>;
   if (!data) return null;
@@ -3006,7 +3160,7 @@ export function SettlementView({ groupId, memberId, members, refreshKey }: Props
         <ul>
           {Object.entries(data.netBalances).map(([mid, bal]) => (
             <li key={mid}>
-              {name(mid)}: {bal > 0 ? '+' : ''}
+              {name(mid)}: {bal > 0 ? "+" : ""}
               {bal.toLocaleString()}
             </li>
           ))}
@@ -3017,28 +3171,26 @@ export function SettlementView({ groupId, memberId, members, refreshKey }: Props
 }
 ```
 
-- [ ] **Step 3: page.tsx 統合**
+- [ ] **Step 3: GroupDashboard を最終形に更新**
 
-`page.tsx` の最終形:
+`features/groups/components/group-dashboard.tsx` を以下に更新(全 feature を組み込んだ最終形):
 
 ```tsx
-'use client';
-import { use, useState } from 'react';
+// frontend/features/groups/components/group-dashboard.tsx
+"use client";
+import { useState } from "react";
 
-import { useGroup } from '@/lib/hooks/use-group';
-import { useMemberStorage } from '@/lib/hooks/use-member-storage';
+import { useGroup } from "@/features/groups/hooks/use-group";
+import { PaymentForm } from "@/features/payments/components/payment-form";
+import { PaymentList } from "@/features/payments/components/payment-list";
+import { SettlementView } from "@/features/settlement/components/settlement-view";
+import { useMemberStorage } from "@/hooks/use-member-storage";
 
-import { MemberSelect } from './components/member-select';
-import { PaymentForm } from './components/payment-form';
-import { PaymentList } from './components/payment-list';
-import { SettlementView } from './components/settlement-view';
+import { MemberSelect } from "./member-select";
 
-export default function GroupPage({
-  params,
-}: {
-  params: Promise<{ uuid: string }>;
-}) {
-  const { uuid: groupId } = use(params);
+type Props = { groupId: string };
+
+export function GroupDashboard({ groupId }: Props) {
   const { memberId, setMemberId } = useMemberStorage(groupId);
   const { data, loading, reload } = useGroup(groupId, memberId);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -3103,9 +3255,12 @@ export default function GroupPage({
 }
 ```
 
+> `app/g/[uuid]/page.tsx` は Task 17 で作成した薄い shell のまま変更不要(`<GroupDashboard groupId={uuid} />` を呼ぶだけ)。Task 18-20 のフィーチャ追加は、すべて `GroupDashboard` 内の import / 配置で完結する。
+
 - [ ] **Step 4: 動作確認(コア体験を E2E で確認)**
 
 ローカルで以下のシナリオを手動実行:
+
 1. `npm run dev`(frontend)+ `uv run uvicorn app.main:app --reload`(backend)
 2. http://localhost:3000 → グループ作成「テスト飲み会」、メンバー A, B, C
 3. → `/g/<uuid>` 自動遷移、creator(A) の id が localStorage に保存されている
@@ -3116,7 +3271,7 @@ export default function GroupPage({
 - [ ] **Step 5: コミット**
 
 ```bash
-git add frontend/app/g/ frontend/lib/api/settlement.ts
+git add frontend/features/
 git commit -m "feat(frontend): add settlement view (transfer list + net balances)"
 ```
 
@@ -3148,6 +3303,7 @@ npm run lint && npm run format:check && npm run typecheck && npm test && npm run
 cd backend
 flyctl ssh console -a splai-backend -C "uv run alembic upgrade head"
 ```
+
 期待出力: `Running upgrade ... -> <rev>, create core tables`
 
 > Fly.io コンテナ内で `.venv` が存在し、DATABASE_URL は secrets 経由で注入されている前提。`flyctl ssh console` セッション内で `cd /app && uv run alembic upgrade head` でも可。
@@ -3243,6 +3399,7 @@ git push origin develop
 ## このフェーズで作成する成果物まとめ
 
 ### Backend
+
 - ✅ 4 テーブル(groups / members / payments / payment_shares)+ Alembic マイグレーション
 - ✅ 6 本の REST エンドポイント(POST /api/groups, GET /api/groups/{id}, POST /members, POST/PATCH/DELETE /payments, GET /settlement)
 - ✅ X-Member-Id `Depends()` 認可
@@ -3250,6 +3407,7 @@ git push origin develop
 - ✅ Pydantic CamelModel スキーマ(Request / Response)
 
 ### Frontend
+
 - ✅ Landing(グループ作成フォーム)
 - ✅ /g/[uuid] dashboard(メンバー選択 / 支払い入力 / 一覧 / 清算)
 - ✅ localStorage ベースのメンバー識別
@@ -3257,6 +3415,7 @@ git push origin develop
 - ✅ OpenAPI → Zod 自動生成
 
 ### インフラ
+
 - ✅ Fly.io への migration 適用フロー
 - ✅ Vercel preview / production の自動連動
 
