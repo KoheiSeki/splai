@@ -1,12 +1,7 @@
-# docs
-docs/*
-
-# Environment variables
-# 実値を含む env ファイル(.env, .env.local, .env.dev 等)は無視。
-# テンプレートの .env.example は追跡対象として明示的に除外する。
-.env
-.env.*
-!.env.example
+# =====================================================================
+# Root .gitignore — repo 横断 / OS / Editor / 言語横断的なものだけ
+# 言語特有の無視パターンは frontend/.gitignore / backend/.gitignore に置く
+# =====================================================================
 
 # OS
 .DS_Store
@@ -17,30 +12,19 @@ Thumbs.db
 .idea/
 *.swp
 
-# Frontend
-frontend/node_modules/
-frontend/.next/
-frontend/out/
-frontend/.env*.local
-frontend/coverage/
-
-# Backend
-backend/__pycache__/
-__pycache__/
-*.pyc
-backend/.venv/
-backend/.pytest_cache/
-backend/.ruff_cache/
-backend/.env
-backend/dist/
-backend/*.egg-info/
-
-# Logs / artifacts
+# Logs (どの言語でも出る)
 *.log
 
-# Sentry
+# Sentry CLI(.sentryclirc は CLI 認証情報)
 .sentryclirc
 
-# claude.md
-CLAUDE.md
+# Environment variables (repo-wide policy)
+# 実値ファイルは無視、テンプレート(.env.example / .env.local.example)は追跡
+.env
+.env.*
+!.env.example
+!.env.local.example
 
+# Note: docs/ と CLAUDE.md は planning repo の本体なので **追跡対象**。
+# 過去のバージョンで gitignore していたが、設計・計画・規約を git で
+# 管理するために除外しない。
