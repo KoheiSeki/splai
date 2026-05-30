@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text, func
+from sqlalchemy import DateTime, Enum, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -25,6 +25,12 @@ class Payment(Base):
     """
 
     __tablename__ = "payments"
+    # 設計書 §5 の `payments(group_id, deleted_at)` 複合インデックス。
+    # group_id 単独の検索も左プレフィックスとしてカバーするので、
+    # group_id カラム単独の index=True は付けない(冗長になるため)。
+    __table_args__ = (
+        Index("ix_payments_group_id_deleted_at", "group_id", "deleted_at"),
+    )
 
     # 支払いID
     id: Mapped[uuid.UUID] = mapped_column(
@@ -35,7 +41,6 @@ class Payment(Base):
         PG_UUID(as_uuid=True),
         ForeignKey("groups.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
     # 支払者ID
     payer_id: Mapped[uuid.UUID] = mapped_column(

@@ -126,26 +126,26 @@ splai/
 
 > **ディレクトリの役割分担**(規約 §6.5 と整合):
 >
-> | 階層 | 役割 | 例 |
-> |---|---|---|
-> | `app/` | Next.js routing(page / layout のみ。中身は features を呼ぶ薄い shell) | `app/g/[uuid]/page.tsx` |
-> | `features/<X>/` | **ドメイン単位の自己完結スライス**(components / hooks / api / types) | `features/payments/` |
-> | `components/` | **機能横断の共有 UI primitives**(Phase 1 では空、Phase 2 で `Button` 等を導入) | (将来) |
-> | `hooks/` | **複数 feature が使う共有 hooks** | `use-member-storage.ts` |
-> | `utils/` | **純粋関数 helper**(同じ入力 → 同じ出力、外部依存なし) | `format.ts`(formatYen, formatDate) |
-> | `lib/` | **副作用 / Web API 依存の infrastructure primitives** | axios インスタンス、localStorage、env 検証 |
+> | 階層            | 役割                                                                           | 例                                         |
+> | --------------- | ------------------------------------------------------------------------------ | ------------------------------------------ |
+> | `app/`          | Next.js routing(page / layout のみ。中身は features を呼ぶ薄い shell)          | `app/g/[uuid]/page.tsx`                    |
+> | `features/<X>/` | **ドメイン単位の自己完結スライス**(components / hooks / api / types)           | `features/payments/`                       |
+> | `components/`   | **機能横断の共有 UI primitives**(Phase 1 では空、Phase 2 で `Button` 等を導入) | (将来)                                     |
+> | `hooks/`        | **複数 feature が使う共有 hooks**                                              | `use-member-storage.ts`                    |
+> | `utils/`        | **純粋関数 helper**(同じ入力 → 同じ出力、外部依存なし)                         | `format.ts`(formatYen, formatDate)         |
+> | `lib/`          | **副作用 / Web API 依存の infrastructure primitives**                          | axios インスタンス、localStorage、env 検証 |
 >
 > **共有 vs 機能特化の判定**:「このファイルが消えると影響する feature 数」が 1 個なら `features/<X>/`、2 個以上なら共有層(`hooks/` / `components/` / `utils/` / `lib/`)へ。
 >
 > **feature 内の sub-directory 化ルール(昇格)**:`features/<X>/` 内では「**単一ファイルは flat、複数になったら sub-dir に昇格**」を一貫して適用:
 >
-> | 種別 | 1-2 file | 3+ file |
-> |---|---|---|
-> | hooks(`use-*.ts`) | flat(feature 直下に置く)| `features/<X>/hooks/` に昇格 |
-> | api | `api.ts`(flat) | `features/<X>/api/` に昇格 |
-> | types | `types.ts`(flat) | `features/<X>/types/` に昇格 |
-> | utils(機能特化) | `utils.ts`(flat) | `features/<X>/utils/` に昇格 |
-> | components | 常に `components/`(複数前提) | (常にディレクトリ) |
+> | 種別              | 1-2 file                     | 3+ file                      |
+> | ----------------- | ---------------------------- | ---------------------------- |
+> | hooks(`use-*.ts`) | flat(feature 直下に置く)     | `features/<X>/hooks/` に昇格 |
+> | api               | `api.ts`(flat)               | `features/<X>/api/` に昇格   |
+> | types             | `types.ts`(flat)             | `features/<X>/types/` に昇格 |
+> | utils(機能特化)   | `utils.ts`(flat)             | `features/<X>/utils/` に昇格 |
+> | components        | 常に `components/`(複数前提) | (常にディレクトリ)           |
 >
 > Phase 1 の各 feature は hooks 1 個前後 → **`features/<X>/use-xxx.ts` の flat 配置**を採用。
 
@@ -184,7 +184,9 @@ def test_group_instantiation():
     g = Group(name="渋谷飲み会", event_date=date(2026, 6, 1))
     assert g.name == "渋谷飲み会"
     assert g.event_date == date(2026, 6, 1)
-    assert g.currency == "JPY"  # default
+    # currency / created_at / id は DB flush 時に SQLAlchemy / Postgres が default を
+    # 適用する(Python 直後は None)。実値の検証は API integration test
+    # (test_groups_api)で end-to-end に行う。
 
 
 def test_member_requires_group_id():
