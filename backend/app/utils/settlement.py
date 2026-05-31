@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Protocol
 from uuid import UUID
 
 
@@ -46,3 +47,41 @@ def settle(net_balances: dict[UUID, int]) -> list[Transfer]:
             j += 1
 
     return transfers
+
+
+class _ShareLike(Protocol):
+    """payment_share の最小限のインタフェース(utils が ORM に依存しないため)。"""
+
+    member_id: UUID
+    share_type: str  # "equal" | "ratio" | "amount"
+    share_value: float
+
+
+def compute_share_amounts(payment_amount: int, shares: list[_ShareLike]) -> dict[UUID, int]:
+    """1 件の payment 内での各 member の負担額を計算する純粋関数。
+
+    - equal: payment_amount を均等割(端数は最初の share に寄せる)
+    - amount: share_value を直接負担額として使う
+    - ratio: share_value を比率として配分(MVP は未対応、equal にフォールバック)
+    """
+    if not shares:
+        return {}
+
+    if all(s.share_type == "amount" for s in shares):
+        return {s.member_id: int(s.share_value) for s in shares}
+
+    if all(s.share_type == "equal" for s in shares):
+        n = len(shares)
+        base = payment_amount // n
+        remainder = payment_amount - base * n
+        result = {s.member_id: base for s in shares}
+        # 端数を先頭に寄せる
+        result[shares[0].member_id] += remainder
+
+        return result
+
+    # ratio やミックスは MVP では equal にフォールバック
+    n = len(shares)
+    base = payment_amount // n
+
+    return {s.member_id: base for s in shares}
