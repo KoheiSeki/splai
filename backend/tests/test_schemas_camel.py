@@ -27,6 +27,8 @@ def test_group_response_dumps_camel_case():
         event_date=None,
         currency="JPY",
         creator_member_id=uuid4(),
+        members=[],
+        payments=[],
     )
     dumped = g.model_dump(by_alias=True)
     assert "creatorMemberId" in dumped

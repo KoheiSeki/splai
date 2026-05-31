@@ -58,9 +58,9 @@
           }
         },
         "type": "object",
-        "required": ["id", "payerId", "amount", "description", "paidAt", "source"],
+        "required": ["id", "payerId", "amount", "description", "paidAt", "source", "shares"],
         "title": "PaymentSummary",
-        "description": "支払い情報",
+        "description": "支払い情報。\n\n`shares` は backend が常に返すので default を持たせない\n(= OpenAPI required → frontend TS 型でも non-optional)。",
         "x-readme-ref-name": "PaymentSummary"
       },
       "type": "array",
@@ -68,8 +68,8 @@
     }
   },
   "type": "object",
-  "required": ["id", "name", "eventDate", "currency"],
+  "required": ["id", "name", "eventDate", "currency", "members", "payments"],
   "title": "GroupResponse",
-  "description": "グループ情報",
+  "description": "グループ情報。\n\n`members` / `payments` は backend が常に値を返すので default を持たせない\n(= OpenAPI 上 required になる → frontend の TS 型でも non-optional)。\nRequest 側の default_factory と混同しないこと。",
   "x-readme-ref-name": "GroupResponse"
 }

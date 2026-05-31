@@ -29,7 +29,9 @@ export const createPaymentApiGroupsGroupIdPaymentsPostHeaderParamsSchema = z.obj
  */
 export const createPaymentApiGroupsGroupIdPaymentsPost201Schema = z
   .lazy(() => paymentSummarySchema)
-  .describe('支払い情報') as unknown as z.ZodType<CreatePaymentApiGroupsGroupIdPaymentsPost201>;
+  .describe(
+    '支払い情報。\n\n`shares` は backend が常に返すので default を持たせない\n(= OpenAPI required → frontend TS 型でも non-optional)。',
+  ) as unknown as z.ZodType<CreatePaymentApiGroupsGroupIdPaymentsPost201>;
 
 /**
  * @description Validation Error

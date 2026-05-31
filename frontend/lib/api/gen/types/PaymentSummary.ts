@@ -16,7 +16,7 @@ export type PaymentSummarySourceEnumKey =
 
 /**
  * PaymentSummary
- * @description 支払い情報
+ * @description 支払い情報。\n\n`shares` は backend が常に返すので default を持たせない\n(= OpenAPI required → frontend TS 型でも non-optional)。
  */
 export type PaymentSummary = {
   /**
@@ -44,7 +44,7 @@ export type PaymentSummary = {
    */
   source: PaymentSummarySourceEnumKey;
   /**
-   * @type array | undefined
+   * @type array
    */
-  shares?: ShareSummary[];
+  shares: ShareSummary[];
 };

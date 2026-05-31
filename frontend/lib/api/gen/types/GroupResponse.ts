@@ -8,7 +8,7 @@ import type { PaymentSummary } from './PaymentSummary.ts';
 
 /**
  * GroupResponse
- * @description グループ情報
+ * @description グループ情報。\n\n`members` / `payments` は backend が常に値を返すので default を持たせない\n(= OpenAPI 上 required になる → frontend の TS 型でも non-optional)。\nRequest 側の default_factory と混同しないこと。
  */
 export type GroupResponse = {
   /**
@@ -26,11 +26,11 @@ export type GroupResponse = {
   currency: string;
   creatorMemberId?: string | null;
   /**
-   * @type array | undefined
+   * @type array
    */
-  members?: MemberSummary[];
+  members: MemberSummary[];
   /**
-   * @type array | undefined
+   * @type array
    */
-  payments?: PaymentSummary[];
+  payments: PaymentSummary[];
 };

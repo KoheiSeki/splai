@@ -31,7 +31,7 @@ export const updatePaymentApiGroupsGroupIdPaymentsPaymentIdPatchHeaderParamsSche
 export const updatePaymentApiGroupsGroupIdPaymentsPaymentIdPatch200Schema = z
   .lazy(() => paymentSummarySchema)
   .describe(
-    '支払い情報',
+    '支払い情報。\n\n`shares` は backend が常に返すので default を持たせない\n(= OpenAPI required → frontend TS 型でも non-optional)。',
   ) as unknown as z.ZodType<UpdatePaymentApiGroupsGroupIdPaymentsPaymentIdPatch200>;
 
 /**

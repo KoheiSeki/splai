@@ -19,7 +19,9 @@ import { z } from 'zod/v4';
  */
 export const createGroupApiGroupsPost201Schema = z
   .lazy(() => groupResponseSchema)
-  .describe('グループ情報') as unknown as z.ZodType<CreateGroupApiGroupsPost201>;
+  .describe(
+    'グループ情報。\n\n`members` / `payments` は backend が常に値を返すので default を持たせない\n(= OpenAPI 上 required になる → frontend の TS 型でも non-optional)。\nRequest 側の default_factory と混同しないこと。',
+  ) as unknown as z.ZodType<CreateGroupApiGroupsPost201>;
 
 /**
  * @description Validation Error

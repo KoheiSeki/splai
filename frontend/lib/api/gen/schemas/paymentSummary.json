@@ -28,8 +28,8 @@
     }
   },
   "type": "object",
-  "required": ["id", "payerId", "amount", "description", "paidAt", "source"],
+  "required": ["id", "payerId", "amount", "description", "paidAt", "source", "shares"],
   "title": "PaymentSummary",
-  "description": "支払い情報",
+  "description": "支払い情報。\n\n`shares` は backend が常に返すので default を持たせない\n(= OpenAPI required → frontend TS 型でも non-optional)。",
   "x-readme-ref-name": "PaymentSummary"
 }

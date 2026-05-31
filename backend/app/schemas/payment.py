@@ -46,7 +46,11 @@ class UpdatePaymentRequest(CamelModel):
 
 
 class PaymentSummary(CamelModel):
-    """支払い情報"""
+    """支払い情報。
+
+    `shares` は backend が常に返すので default を持たせない
+    (= OpenAPI required → frontend TS 型でも non-optional)。
+    """
 
     id: UUID
     payer_id: UUID
@@ -54,4 +58,4 @@ class PaymentSummary(CamelModel):
     description: str
     paid_at: datetime
     source: Literal["manual", "ocr", "chat"]
-    shares: list[ShareSummary] = Field(default_factory=list)
+    shares: list[ShareSummary]

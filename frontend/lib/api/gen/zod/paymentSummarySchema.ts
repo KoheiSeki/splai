@@ -8,7 +8,7 @@ import { shareSummarySchema } from './shareSummarySchema.ts';
 import { z } from 'zod/v4';
 
 /**
- * @description 支払い情報
+ * @description 支払い情報。\n\n`shares` は backend が常に返すので default を持たせない\n(= OpenAPI required → frontend TS 型でも non-optional)。
  */
 export const paymentSummarySchema = z
   .object({
@@ -19,7 +19,9 @@ export const paymentSummarySchema = z
     paidAt: z.iso.datetime(),
     source: z.enum(['manual', 'ocr', 'chat']),
     get shares() {
-      return z.array(shareSummarySchema.describe('支払い共有情報')).optional();
+      return z.array(shareSummarySchema.describe('支払い共有情報'));
     },
   })
-  .describe('支払い情報') as unknown as z.ZodType<PaymentSummary>;
+  .describe(
+    '支払い情報。\n\n`shares` は backend が常に返すので default を持たせない\n(= OpenAPI required → frontend TS 型でも non-optional)。',
+  ) as unknown as z.ZodType<PaymentSummary>;

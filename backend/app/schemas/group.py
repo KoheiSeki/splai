@@ -26,12 +26,17 @@ class MemberSummary(CamelModel):
 
 
 class GroupResponse(CamelModel):
-    """グループ情報"""
+    """グループ情報。
+
+    `members` / `payments` は backend が常に値を返すので default を持たせない
+    (= OpenAPI 上 required になる → frontend の TS 型でも non-optional)。
+    Request 側の default_factory と混同しないこと。
+    """
 
     id: UUID
     name: str
     event_date: date | None
     currency: str
     creator_member_id: UUID | None = None
-    members: list[MemberSummary] = Field(default_factory=list)
-    payments: list[PaymentSummary] = Field(default_factory=list)
+    members: list[MemberSummary]
+    payments: list[PaymentSummary]

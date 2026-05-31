@@ -9,7 +9,7 @@ import { paymentSummarySchema } from './paymentSummarySchema.ts';
 import { z } from 'zod/v4';
 
 /**
- * @description グループ情報
+ * @description グループ情報。\n\n`members` / `payments` は backend が常に値を返すので default を持たせない\n(= OpenAPI 上 required になる → frontend の TS 型でも non-optional)。\nRequest 側の default_factory と混同しないこと。
  */
 export const groupResponseSchema = z
   .object({
@@ -19,10 +19,16 @@ export const groupResponseSchema = z
     currency: z.string(),
     creatorMemberId: z.optional(z.union([z.uuid(), z.null()])),
     get members() {
-      return z.array(memberSummarySchema.describe('メンバー情報')).optional();
+      return z.array(memberSummarySchema.describe('メンバー情報'));
     },
     get payments() {
-      return z.array(paymentSummarySchema.describe('支払い情報')).optional();
+      return z.array(
+        paymentSummarySchema.describe(
+          '支払い情報。\n\n`shares` は backend が常に返すので default を持たせない\n(= OpenAPI required → frontend TS 型でも non-optional)。',
+        ),
+      );
     },
   })
-  .describe('グループ情報') as unknown as z.ZodType<GroupResponse>;
+  .describe(
+    'グループ情報。\n\n`members` / `payments` は backend が常に値を返すので default を持たせない\n(= OpenAPI 上 required になる → frontend の TS 型でも non-optional)。\nRequest 側の default_factory と混同しないこと。',
+  ) as unknown as z.ZodType<GroupResponse>;
