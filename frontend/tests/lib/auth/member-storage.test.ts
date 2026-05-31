@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+
 import { getMemberId, setMemberId, clearMemberId } from '@/lib/auth/member-storage';
 
 describe('member-storage', () => {
