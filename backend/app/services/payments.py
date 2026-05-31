@@ -7,7 +7,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.exceptions.domain import InvalidPaymentShares
+from app.exceptions.domain import GroupNotFound, InvalidPaymentShares
 from app.models import Member, Payment, PaymentShare, PaymentSource, ShareType
 
 
@@ -79,3 +79,78 @@ async def create_payment_with_shares(
     await db.commit()
     await db.refresh(payment)
     return payment, share_models
+
+
+async def get_payment_in_group(
+    db: AsyncSession,
+    *,
+    payment_id: UUID,
+    group_id: UUID,
+) -> Payment:
+    """payment_id が group_id に属することを検証して返す。
+
+    member の認可は router 側で `Depends(require_member)` が済ませているので、
+    ここでは payment の所属チェックだけ行う。group に存在しない / 別 group の
+    payment_id を投げられた場合は GroupNotFound を raise する。
+    """
+    payment = await db.scalar(select(Payment).where(Payment.id == payment_id))
+    if payment is None or payment.group_id != group_id:
+        raise GroupNotFound(f"payment {payment_id} not found in group {group_id}")
+    return payment
+
+
+@dataclass(frozen=True)
+class PaymentUpdateDTO:
+    """update 用入力 DTO。各フィールド None = 変更なし。"""
+
+    payer_id: UUID | None = None
+    amount: int | None = None
+    description: str | None = None
+    paid_at: datetime | None = None
+    shares: list[ShareInputDTO] | None = None
+
+
+async def update_payment_with_shares(
+    db: AsyncSession, *, payment: Payment, update: PaymentUpdateDTO
+) -> tuple[Payment, list[PaymentShare]]:
+    """既存 payment を編集する。shares が指定された場合は全置換。
+
+    書き込み(payment 属性 + shares 削除/追加)と読み取り(既存 shares の取得)を
+    すべて 1 トランザクション内で実施し、最後に 1 度だけ commit する。
+    """
+
+    if update.payer_id is not None:
+        payment.payer_id = update.payer_id
+    if update.amount is not None:
+        payment.amount = update.amount
+    if update.description is not None:
+        payment.description = update.description
+    if update.paid_at is not None:
+        payment.paid_at = update.paid_at
+
+    if update.shares is not None:
+        # 既存 shares を全消しして入れ直す
+        await db.execute(
+            PaymentShare.__table__.delete().where(PaymentShare.payment_id == payment.id)
+        )
+        new_shares = [
+            PaymentShare(
+                payment_id=payment.id,
+                member_id=s.member_id,
+                share_type=ShareType(s.share_type),
+                share_value=s.share_value,
+            )
+            for s in update.shares
+        ]
+        db.add_all(new_shares)
+        await db.flush()  # commit せずに DB に反映、default=uuid.uuid4 等を確定
+        shares = new_shares
+    else:
+        # shares 指定なし: 既存を同じトランザクション内で取得
+        rows = await db.scalars(
+            select(PaymentShare).where(PaymentShare.payment_id == payment.id)
+        )
+        shares = list(rows.all())
+
+    await db.commit()  # 1 トランザクションをここで完了
+    return payment, shares
