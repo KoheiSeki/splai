@@ -1,6 +1,6 @@
 from uuid import uuid4
 
-from app.services.settlement import Transfer, settle
+from app.utils.settlement import Transfer, settle
 
 
 def test_empty_returns_no_transfers():

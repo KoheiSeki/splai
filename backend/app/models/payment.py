@@ -28,9 +28,7 @@ class Payment(Base):
     # 設計書 §5 の `payments(group_id, deleted_at)` 複合インデックス。
     # group_id 単独の検索も左プレフィックスとしてカバーするので、
     # group_id カラム単独の index=True は付けない(冗長になるため)。
-    __table_args__ = (
-        Index("ix_payments_group_id_deleted_at", "group_id", "deleted_at"),
-    )
+    __table_args__ = (Index("ix_payments_group_id_deleted_at", "group_id", "deleted_at"),)
 
     # 支払いID
     id: Mapped[uuid.UUID] = mapped_column(
