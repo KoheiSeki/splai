@@ -1834,12 +1834,12 @@ from app.schemas.payment import (
 from app.services import payments as payments_service
 from app.services.payments import ShareInputDTO
 
-# /api/groups/{group_id}/payments と /api/payments/{payment_id} を 1 ファイルに統合
-group_router = APIRouter(prefix="/api/groups/{group_id}/payments", tags=["payments"])
-payment_router = APIRouter(prefix="/api/payments", tags=["payments"])
+# すべての payment 系 endpoint を /api/groups/{group_id}/payments 配下に統合
+# (PATCH/DELETE も group_id を path に持たせ、Depends(require_member) を再利用)
+router = APIRouter(prefix="/api/groups/{group_id}/payments", tags=["payments"])
 
 
-@group_router.post("", status_code=status.HTTP_201_CREATED, response_model=PaymentSummary)
+@router.post("", status_code=status.HTTP_201_CREATED, response_model=PaymentSummary)
 async def create_payment(
     group_id: UUID,
     body: CreatePaymentRequest,
@@ -1886,8 +1886,7 @@ async def create_payment(
 ```python
 from app.api import groups, members, payments
 ...
-app.include_router(payments.group_router)
-app.include_router(payments.payment_router)
+app.include_router(payments.router)
 ```
 
 - [ ] **Step 6: テスト実行 → PASS確認**
@@ -1907,7 +1906,7 @@ git commit -m "feat(api): add POST /api/groups/{id}/payments with shares validat
 
 ---
 
-### Task 10: API: `PATCH /api/payments/{payment_id}`(支払い編集)
+### Task 10: API: `PATCH /api/groups/{group_id}/payments/{payment_id}`(支払い編集)
 
 **Files:**
 
@@ -1915,14 +1914,15 @@ git commit -m "feat(api): add POST /api/groups/{id}/payments with shares validat
 - Modify: `backend/app/api/payments.py`
 - Modify: `backend/tests/test_payments_api.py`
 
+> **設計判断**: PATCH/DELETE も group 配下にネストする(`/api/groups/{group_id}/payments/{payment_id}`)。これにより `Depends(require_member)` をそのまま再利用でき、独自の `X-Group-Id` ヘッダを増やさずに済む。詳細は `design.md` §7。
+
 - [ ] **Step 1: 失敗するテストを追加**
 
 ```python
 # tests/test_payments_api.py に追加
-def test_patch_payment_updates_amount_and_description():
-    client = TestClient(app)
-    gid, creator_mid, members = _create_group_with_members(client, ["A", "B"])
-    create_res = client.post(
+async def test_patch_payment_updates_amount_and_description(client: AsyncClient):
+    gid, creator_mid, members = await _create_group_with_members(client, ["A", "B"])
+    create_res = await client.post(
         f"/api/groups/{gid}/payments",
         headers={"X-Member-Id": creator_mid},
         json={
@@ -1937,9 +1937,9 @@ def test_patch_payment_updates_amount_and_description():
     )
     pid = create_res.json()["id"]
 
-    res = client.patch(
-        f"/api/payments/{pid}",
-        headers={"X-Member-Id": creator_mid, "X-Group-Id": gid},
+    res = await client.patch(
+        f"/api/groups/{gid}/payments/{pid}",
+        headers={"X-Member-Id": creator_mid},
         json={"amount": 5000, "description": "new"},
     )
     assert res.status_code == 200
@@ -1947,8 +1947,6 @@ def test_patch_payment_updates_amount_and_description():
     assert body["amount"] == 5000
     assert body["description"] == "new"
 ```
-
-> **設計判断**: PATCH/DELETE は path に group_id を持たないため、X-Member-Id 検証用に **X-Group-Id ヘッダ**で対象 group を指定する。これは設計書 §7 共通仕様の例外運用。
 
 - [ ] **Step 2: テスト失敗確認**
 
@@ -1959,7 +1957,7 @@ def test_patch_payment_updates_amount_and_description():
 from datetime import datetime
 from uuid import UUID
 
-from app.exceptions.domain import GroupNotFound, MemberMismatch
+from app.exceptions.domain import GroupNotFound
 
 
 async def get_payment_in_group(
@@ -1967,23 +1965,16 @@ async def get_payment_in_group(
     *,
     payment_id: UUID,
     group_id: UUID,
-    member_id: UUID,
-) -> tuple[Payment, Member]:
-    """payment_id が group_id に属し、member_id がその group のメンバーであることを検証。
+) -> Payment:
+    """payment_id が group_id に属することを検証して返す。
 
-    PATCH/DELETE は path に group_id を持たないため、X-Group-Id ヘッダで対象を
-    指定する。検証ロジックは router 側に置かず service に集約する。
+    member の認可は router 側で `Depends(require_member)` が済ませているので、
+    ここでは payment の所属チェックだけ行う。
     """
     payment = await db.scalar(select(Payment).where(Payment.id == payment_id))
     if payment is None or payment.group_id != group_id:
         raise GroupNotFound(f"payment {payment_id} not found in group {group_id}")
-
-    member = await db.scalar(
-        select(Member).where(Member.id == member_id, Member.group_id == group_id)
-    )
-    if member is None:
-        raise MemberMismatch(f"member {member_id} is not in group {group_id}")
-    return payment, member
+    return payment
 
 
 @dataclass(frozen=True)
@@ -2043,26 +2034,21 @@ async def update_payment_with_shares(
 
 ```python
 # backend/app/api/payments.py に追加
-from fastapi import Header
-
 from app.schemas.payment import UpdatePaymentRequest
 from app.services.payments import PaymentUpdateDTO
 
 
-@payment_router.patch("/{payment_id}", response_model=PaymentSummary)
+@router.patch("/{payment_id}", response_model=PaymentSummary)
 async def update_payment(
+    group_id: UUID,
     payment_id: UUID,
     body: UpdatePaymentRequest,
-    x_group_id: UUID = Header(..., alias="X-Group-Id"),
-    x_member_id: UUID = Header(..., alias="X-Member-Id"),
+    _requester: Member = Depends(require_member),
     db: AsyncSession = Depends(get_session),
 ) -> PaymentSummary:
-    """支払いを編集する。
-
-    PATCH は path に group_id を持たないため、X-Group-Id ヘッダで認可対象を指定。
-    """
-    payment, _member = await payments_service.get_payment_in_group(
-        db, payment_id=payment_id, group_id=x_group_id, member_id=x_member_id,
+    """支払いを編集する。group 配下の payment であることを検証してから更新。"""
+    payment = await payments_service.get_payment_in_group(
+        db, payment_id=payment_id, group_id=group_id,
     )
 
     update = PaymentUpdateDTO(
@@ -2102,7 +2088,7 @@ async def update_payment(
     )
 ```
 
-> **設計判断**: PATCH/DELETE の認可は `Depends(require_member)` を使えない(path に group_id がないため)。代わりに service の `get_payment_in_group` で X-Group-Id + X-Member-Id を検証する。これは設計書 §7 共通仕様の例外運用。
+> **認可の流れ**: `Depends(require_member)` が path の `group_id` + `X-Member-Id` ヘッダから「member が group に属するか」を検証。その後 `get_payment_in_group` で「payment が group に属するか」を検証する。両方クリアして初めて更新できる。
 
 - [ ] **Step 5: テスト実行 → PASS確認**
 
@@ -2110,12 +2096,12 @@ async def update_payment(
 
 ```bash
 git add backend/app/api/payments.py backend/app/services/payments.py backend/tests/test_payments_api.py
-git commit -m "feat(api): add PATCH /api/payments/{id} for editing payments"
+git commit -m "feat(api): add PATCH /api/groups/{group_id}/payments/{id} for editing payments"
 ```
 
 ---
 
-### Task 11: API: `DELETE /api/payments/{payment_id}`(論理削除)
+### Task 11: API: `DELETE /api/groups/{group_id}/payments/{payment_id}`(論理削除)
 
 **Files:**
 
@@ -2126,10 +2112,9 @@ git commit -m "feat(api): add PATCH /api/payments/{id} for editing payments"
 - [ ] **Step 1: 失敗するテストを追加**
 
 ```python
-def test_delete_payment_soft_deletes():
-    client = TestClient(app)
-    gid, creator_mid, members = _create_group_with_members(client, ["A"])
-    create_res = client.post(
+async def test_delete_payment_soft_deletes(client: AsyncClient):
+    gid, creator_mid, members = await _create_group_with_members(client, ["A"])
+    create_res = await client.post(
         f"/api/groups/{gid}/payments",
         headers={"X-Member-Id": creator_mid},
         json={
@@ -2143,14 +2128,14 @@ def test_delete_payment_soft_deletes():
     )
     pid = create_res.json()["id"]
 
-    res = client.delete(
-        f"/api/payments/{pid}",
-        headers={"X-Member-Id": creator_mid, "X-Group-Id": gid},
+    res = await client.delete(
+        f"/api/groups/{gid}/payments/{pid}",
+        headers={"X-Member-Id": creator_mid},
     )
     assert res.status_code == 204
 
     # 一覧から消える
-    list_res = client.get(f"/api/groups/{gid}", headers={"X-Member-Id": creator_mid})
+    list_res = await client.get(f"/api/groups/{gid}", headers={"X-Member-Id": creator_mid})
     assert list_res.json()["payments"] == []
 ```
 
@@ -2176,15 +2161,15 @@ async def soft_delete_payment(db: AsyncSession, *, payment: Payment) -> None:
 from fastapi import Response
 
 
-@payment_router.delete("/{payment_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{payment_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_payment(
+    group_id: UUID,
     payment_id: UUID,
-    x_group_id: UUID = Header(..., alias="X-Group-Id"),
-    x_member_id: UUID = Header(..., alias="X-Member-Id"),
+    _requester: Member = Depends(require_member),
     db: AsyncSession = Depends(get_session),
 ) -> Response:
-    payment, _member = await payments_service.get_payment_in_group(
-        db, payment_id=payment_id, group_id=x_group_id, member_id=x_member_id,
+    payment = await payments_service.get_payment_in_group(
+        db, payment_id=payment_id, group_id=group_id,
     )
     await payments_service.soft_delete_payment(db, payment=payment)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -2195,7 +2180,7 @@ async def delete_payment(
 - [ ] **Step 6: コミット**
 
 ```bash
-git commit -am "feat(api): add DELETE /api/payments/{id} (soft delete)"
+git commit -am "feat(api): add DELETE /api/groups/{group_id}/payments/{id} (soft delete)"
 ```
 
 ---
@@ -3205,8 +3190,8 @@ export async function deletePayment(
   groupId: string,
   memberId: string,
 ) {
-  await apiClient.delete(`/api/payments/${paymentId}`, {
-    headers: { "X-Member-Id": memberId, "X-Group-Id": groupId },
+  await apiClient.delete(`/api/groups/${groupId}/payments/${paymentId}`, {
+    headers: { "X-Member-Id": memberId },
   });
 }
 ```
@@ -3776,8 +3761,8 @@ git push origin develop
 - [ ] グループ作成(`POST /api/groups`)— Task 6
 - [ ] メンバー登録(作成時 + 後追加)— Task 6, 8
 - [ ] 手動支払い登録(`POST /api/groups/{id}/payments`)— Task 9
-- [ ] 支払い編集(`PATCH /api/payments/{id}`)— Task 10
-- [ ] 支払い論理削除(`DELETE /api/payments/{id}`)— Task 11
+- [ ] 支払い編集(`PATCH /api/groups/{group_id}/payments/{id}`)— Task 10
+- [ ] 支払い論理削除(`DELETE /api/groups/{group_id}/payments/{id}`)— Task 11
 - [ ] 支払い一覧表示(GET /api/groups/{id} の payments フィールド経由)— Task 7, 19
 - [ ] 清算結果計算(貪欲法)と表示 — Task 3, 12, 20
 - [ ] X-Member-Id 認可ミドルウェア — Task 4

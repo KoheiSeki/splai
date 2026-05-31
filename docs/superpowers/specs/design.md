@@ -408,19 +408,21 @@ groups ──┬── members
 
 ### エンドポイント一覧
 
-| Method | Path                          | 用途                                 |
-| ------ | ----------------------------- | ------------------------------------ |
-| POST   | /api/groups                   | グループ作成                         |
-| GET    | /api/groups/{id}              | グループ情報+メンバー+支払い一覧取得 |
-| POST   | /api/groups/{id}/members      | メンバー追加                         |
-| POST   | /api/groups/{id}/payments     | 支払い登録                           |
-| PATCH  | /api/payments/{id}            | 支払い編集                           |
-| DELETE | /api/payments/{id}            | 支払い論理削除                       |
-| GET    | /api/groups/{id}/settlement   | 清算結果(貪欲法 + AI解説)            |
-| POST   | /api/ocr/upload               | レシート画像アップロード→ジョブ作成  |
-| GET    | /api/ocr-jobs/{id}            | OCR ジョブ状態確認                   |
-| POST   | /api/ai/chat-payment          | AIチャット入力(SSEストリーミング)    |
-| POST   | /api/ai/rewrite-share-message | 共有メッセージのトーン変換           |
+| Method | Path                                                | 用途                                 |
+| ------ | --------------------------------------------------- | ------------------------------------ |
+| POST   | /api/groups                                         | グループ作成                         |
+| GET    | /api/groups/{group_id}                              | グループ情報+メンバー+支払い一覧取得 |
+| POST   | /api/groups/{group_id}/members                      | メンバー追加                         |
+| POST   | /api/groups/{group_id}/payments                     | 支払い登録                           |
+| PATCH  | /api/groups/{group_id}/payments/{payment_id}        | 支払い編集                           |
+| DELETE | /api/groups/{group_id}/payments/{payment_id}        | 支払い論理削除                       |
+| GET    | /api/groups/{group_id}/settlement                   | 清算結果(貪欲法 + AI解説)            |
+| POST   | /api/ocr/upload                                     | レシート画像アップロード→ジョブ作成  |
+| GET    | /api/ocr-jobs/{id}                                  | OCR ジョブ状態確認                   |
+| POST   | /api/ai/chat-payment                                | AIチャット入力(SSEストリーミング)    |
+| POST   | /api/ai/rewrite-share-message                       | 共有メッセージのトーン変換           |
+
+> **設計判断**: payment 系の PATCH / DELETE も group 配下にネストする(`/api/groups/{group_id}/payments/{payment_id}`)。これにより `X-Member-Id` 認可を `Depends(require_member)` でそのまま使えるようになり、独自の `X-Group-Id` ヘッダを増やさずに済む。payment_id は UUID v4 で世界的に一意なので path 上の `group_id` は冗長だが、認可と URL の一貫性を優先した。
 
 ### 共通仕様
 
