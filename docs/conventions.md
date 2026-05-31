@@ -310,6 +310,87 @@ from app.db.session import get_session
 - ❌ 例外を pass で握りつぶす(必ずログか再 raise)
 - ❌ コメントアウトされたコードを残す(git に消えても残る)
 
+### 5.10 ディレクトリ構成
+
+`backend/app/` 直下に **責務単位のレイヤディレクトリ**を置き、レイヤ間の依存方向を厳格に保つ。詳細な層モデルは `docs/superpowers/specs/design.md` §3「Backend 内部レイヤ構造」を参照。
+
+```
+backend/app/
+├── api/                  # Router(HTTP I/O のみ)
+│   ├── groups.py         #   POST/GET /api/groups
+│   ├── members.py        #   POST /api/groups/{id}/members
+│   └── payments.py       #   POST/PATCH/DELETE /api/payments
+├── services/             # ★ I/O を伴うビジネスロジック(orchestration)
+│   ├── groups.py         #   DB + ビジネスルール
+│   ├── payments.py
+│   ├── ai_gateway.py     #   IBM CA API 呼び出し中継(後フェーズ)
+│   └── ocr_gateway.py    #   GCP Vision 呼び出し(後フェーズ)
+├── utils/                # ★ 純粋関数(I/O なし、framework 非依存)
+│   ├── settlement.py     #   清算アルゴリズム(貪欲法)
+│   └── format.py         #   金額フォーマット等
+├── models/               # SQLAlchemy ORM 定義
+├── schemas/              # Pydantic DTO(camelCase 変換)
+├── auth/                 # 認可関連(require_member 等)
+├── exceptions/           # ドメイン例外 + handler
+├── middleware/           # request_id, logging
+├── db/                   # session, base
+└── main.py               # create_app
+```
+
+#### `services/` と `utils/` の使い分け
+
+```
+ロジックを書くとき
+    │
+    ▼
+┌─────────────────────────────────┐
+│ DB / 外部 API / I/O を触るか?   │
+└─────────┬────────────────┬──────┘
+          │ Yes            │ No
+          ▼                ▼
+   app/services/     app/utils/
+```
+
+| 配置先          | 条件                                                            | 例                                            |
+| --------------- | --------------------------------------------------------------- | --------------------------------------------- |
+| `app/utils/`    | I/O を持たない純粋関数(同じ入力 → 同じ出力)、framework 非依存 | 清算アルゴリズム、金額フォーマット            |
+| `app/services/` | `AsyncSession` や httpx などを引数に取り、副作用を持つ          | グループ作成、支払い登録、AI/OCR ゲートウェイ |
+| `app/api/`      | HTTP request/response のバインドと DTO 変換のみ                 | ルーターハンドラ                              |
+
+#### レイヤ間の依存方向(一方向)
+
+```
+api/  ──► services/  ──► utils/
+api/  ──► utils/                  (純粋計算のみ使う場合は service を経由しなくて良い)
+api/  ──► models/, schemas/       (DTO 変換のため)
+services/ ──► models/             (ORM 操作のため)
+services/ ──► utils/              (純粋計算を呼ぶため)
+```
+
+**逆向き禁止**: `services/` から `api/` を、`utils/` から `services/` を import しない。`utils/` は framework 非依存(FastAPI / SQLAlchemy への参照禁止)。
+
+#### Router の責務(HTTP I/O のみ)
+
+router の中で以下を **書かない**:
+
+- ❌ `db.add(...)`, `db.flush()`, `db.commit()` などの DB 操作
+- ❌ 複数エンティティの atomic 作成・更新
+- ❌ ビジネスルールの判定(「先頭メンバーが作成者」等)
+
+router で **書くこと**:
+
+- ✅ Pydantic request DTO の受け取り(`body: CreateGroupRequest`)
+- ✅ 認可(`Depends(require_member)`)
+- ✅ service 関数の呼び出し
+- ✅ ORM model → Pydantic response の変換
+- ✅ status code(`status.HTTP_201_CREATED`)
+
+#### Service の戻り値は ORM model
+
+`services/` は **Pydantic schema を返さない**。ORM model(必要なら tuple)を返し、DTO 変換は router 側で行う。
+
+理由: service が将来 background job / CLI / 別 router からも呼べるようにするため。Pydantic schema は HTTP 表現の都合で揺らぎやすいが、ドメインモデル(ORM model)は安定。
+
 ---
 
 ## 6. コーディング規約 — TypeScript (Frontend)
