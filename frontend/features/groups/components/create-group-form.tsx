@@ -1,6 +1,6 @@
 'use client';
 import { useRouter } from 'next/navigation';
-import { useActionState, useState } from 'react';
+import { startTransition, useActionState, useState } from 'react';
 
 import { createGroup } from '@/features/groups/api';
 import { setMemberId } from '@/lib/auth/member-storage';
@@ -15,8 +15,6 @@ export function CreateGroupForm() {
   const [members, setMembers] = useState(['', '']);
 
   // action: 前 state と payload を受け取り、新 state を返す reducer 風関数。
-  // useActionState が内部で startTransition 相当の処理をラップしており、
-  // 呼び出し側は `submit(payload)` するだけで isPending / state が連動する。
   const [state, submit, isPending] = useActionState<
     FormState,
     { name: string; memberNames: string[] }
@@ -39,9 +37,12 @@ export function CreateGroupForm() {
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     const memberNames = members.map((s) => s.trim()).filter((s) => s.length > 0);
-    // useActionState は内部で transition を張るので、ここで `await` しない。
-    // 結果は state(state.error)と isPending 経由で UI に反映される。
-    submit({ name: name.trim(), memberNames });
+    // React 19: async action を持つ useActionState の dispatch は、
+    // form action prop か startTransition の中から呼ぶ必要がある。
+    // controlled inputs + 加工 payload なので startTransition で包む。
+    startTransition(() => {
+      submit({ name: name.trim(), memberNames });
+    });
   }
 
   return (
