@@ -40,8 +40,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(groups.router)
     app.include_router(members.router)
-    app.include_router(payments.group_router)
-    app.include_router(payments.payment_router)
+    app.include_router(payments.router)
 
     return app
 
