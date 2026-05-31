@@ -2766,6 +2766,32 @@ import {
 } from "@/lib/api/gen/clients/groupsController";
 ```
 
+> **⚠️ Header パラメータは positional 引数になる**: OpenAPI 仕様で `Header(...)` 宣言された値(SPLAI では `X-Member-Id`)は、kubb によって **専用の positional 引数(通常は第 3 引数)** として独立する。`config.headers` 経由ではなく、型付きオブジェクトとして直接渡す:
+>
+> ```typescript
+> // ❌ 誤り: axios config として渡す → "headers does not exist in HeaderParams" 型エラー
+> addMemberApiGroupsGroupIdMembersPost(
+>   groupId,
+>   { name },
+>   { headers: { "X-Member-Id": actor } },
+> );
+>
+> // ✅ 正解: 第 3 引数に直接ヘッダオブジェクトを渡す
+> addMemberApiGroupsGroupIdMembersPost(
+>   groupId,
+>   { name },
+>   { "X-Member-Id": actor },
+> );
+> ```
+>
+> 関数シグネチャを確認するには:
+>
+> ```bash
+> grep -A6 "^export async function" lib/api/gen/clients/<tag>Controller/<file>.ts
+> ```
+>
+> POST `/api/groups`(認可なし)などヘッダパラメータがない endpoint は第 3 引数自体が無いので、`(data, config?)` の 2 引数だけ。
+
 zod schema は `lib/api/gen/zod/<tag>/...` に同名で置かれるので、`react-hook-form` の resolver や fetch 後の追加検証で利用できる。
 
 ---
@@ -3002,7 +3028,7 @@ export async function createGroup(
 // frontend/features/groups/components/create-group-form.tsx
 "use client";
 import { useRouter } from "next/navigation";
-import { useActionState, useState } from "react";
+import { startTransition, useActionState, useState } from "react";
 
 import { createGroup } from "@/features/groups/api";
 import { setMemberId } from "@/lib/auth/member-storage";
@@ -3043,9 +3069,14 @@ export function CreateGroupForm() {
     const memberNames = members
       .map((s) => s.trim())
       .filter((s) => s.length > 0);
-    // useActionState は内部で transition を張るので、ここで `await` しない。
-    // 結果は state(state.error)と isPending 経由で UI に反映される。
-    submit({ name: name.trim(), memberNames });
+    // React 19: async action を持つ useActionState の dispatch は、form action prop か
+    // startTransition の中から呼ぶ必要がある(transition 外で呼ぶと
+    // 「An async function with useActionState was called outside of a transition」警告 +
+    // isPending が正しく更新されない)。
+    // controlled inputs + 加工 payload なので startTransition で明示的に包む。
+    startTransition(() => {
+      submit({ name: name.trim(), memberNames });
+    });
   }
 
   return (
@@ -3219,7 +3250,7 @@ export function useGroup(groupId: string, memberId: string | null) {
 ```tsx
 // frontend/features/groups/components/member-select.tsx
 "use client";
-import { useActionState, useState } from "react";
+import { startTransition, useActionState, useState } from "react";
 
 import { addMemberApiGroupsGroupIdMembersPost } from "@/lib/api/gen/clients/membersController/addMemberApiGroupsGroupIdMembersPost";
 
@@ -3248,10 +3279,12 @@ export function MemberSelect({ groupId, members, onSelect }: Props) {
         };
       }
       try {
+        // kubb は OpenAPI の Header パラメータ(X-Member-Id)を第 3 positional 引数として独立させる。
+        // axios config の `headers` ではなく直接ヘッダオブジェクトを渡す。
         const res = await addMemberApiGroupsGroupIdMembersPost(
           groupId,
           { name },
-          { headers: { "X-Member-Id": actor } },
+          { "X-Member-Id": actor },
         );
         onSelect(res.id);
         setNewName("");
@@ -3267,7 +3300,10 @@ export function MemberSelect({ groupId, members, onSelect }: Props) {
     e.preventDefault();
     const trimmed = newName.trim();
     if (!trimmed) return;
-    addMember(trimmed);
+    // React 19: async action の dispatch は startTransition 内から呼ぶ
+    startTransition(() => {
+      addMember(trimmed);
+    });
   }
 
   return (
@@ -3477,7 +3513,7 @@ export async function deletePayment(
 ```tsx
 // frontend/features/payments/components/payment-form.tsx
 "use client";
-import { useActionState, useState } from "react";
+import { startTransition, useActionState, useState } from "react";
 
 import { createPayment } from "@/features/payments/api";
 
@@ -3532,7 +3568,10 @@ export function PaymentForm({ groupId, memberId, members, onCreated }: Props) {
     e.preventDefault();
     const amt = Number(amount);
     if (!Number.isInteger(amt) || amt <= 0) return;
-    submit({ payerId, amount: amt, description });
+    // React 19: async action の dispatch は startTransition 内から呼ぶ
+    startTransition(() => {
+      submit({ payerId, amount: amt, description });
+    });
   }
 
   return (
