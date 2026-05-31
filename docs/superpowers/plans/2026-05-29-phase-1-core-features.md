@@ -4,9 +4,9 @@
 
 **Goal:** ログイン無しでグループを作成し、メンバーを登録し、手動で支払いを記録し、清算結果(貪欲法による最少送金リスト)を表示できる、SPLAI MVP のコアフローを完成させる。
 
-**Architecture:** Phase 0 で構築した FastAPI/Next.js 基盤の上に、4 つの SQLAlchemy モデル(groups/members/payments/payment_shares)、X-Member-Id を `Depends()` で検証する認可、清算用の純粋関数(設計書 付録 A の貪欲法)、6 本の REST エンドポイントを実装する。Frontend は OpenAPI から Zod スキーマを自動生成して型安全な fetcher を組み、`/`(landing)と `/g/[uuid]`(group dashboard)の 2 画面で全ユースケースをカバー。
+**Architecture:** Phase 0 で構築した FastAPI/Next.js 基盤の上に、4 つの SQLAlchemy モデル(groups/members/payments/payment_shares)、X-Member-Id を `Depends()` で検証する認可、清算用の純粋関数(設計書 付録 A の貪欲法)、6 本の REST エンドポイントを実装する。Frontend は OpenAPI から **kubb で TypeScript 型 + Zod スキーマ + axios クライアント関数を自動生成**し、`/`(landing)と `/g/[uuid]`(group dashboard)の 2 画面で全ユースケースをカバー。
 
-**Tech Stack:** SQLAlchemy 2.x + Alembic、Pydantic 2 (CamelModel)、FastAPI Depends 認可、Next.js 16 App Router、`openapi-zod-client`、react-hook-form + Zod resolver、localStorage(group-scoped key)。
+**Tech Stack:** SQLAlchemy 2.x + Alembic、Pydantic 2 (CamelModel)、FastAPI Depends 認可、Next.js 16 App Router、**kubb**(`@kubb/cli` + `plugin-{oas,ts,zod,client}`)、zod v4、react-hook-form + Zod resolver、localStorage(group-scoped key)。
 
 ---
 
@@ -105,13 +105,20 @@ splai/
 │   │   └── format.ts                           ← (必要時、formatYen / formatDate)
 │   ├── lib/                                    ← 副作用 / Web API 依存の infra primitives
 │   │   ├── api/
-│   │   │   ├── client.ts                       ← 既存 api-client.ts を改名
-│   │   │   └── schemas.gen.ts                  ← Task 14(自動生成、追跡対象)
+│   │   │   ├── api-client.ts                   ← 既存(axios + X-Request-Id interceptor)
+│   │   │   ├── kubb-client.ts                  ← Task 14(kubb 生成 client が呼ぶ HTTP 実行関数)
+│   │   │   └── gen/                            ← Task 14(kubb 自動生成、追跡対象)
+│   │   │       ├── types/                      ←   tag 別 TypeScript 型
+│   │   │       ├── zod/                        ←   tag 別 Zod schema
+│   │   │       └── clients/                    ←   tag 別 client 関数(createGroup 等)
 │   │   ├── auth/
 │   │   │   └── member-storage.ts               ← Task 15(localStorage 低レベル)
 │   │   ├── env.ts                              ← 既存
 │   │   └── request-id.ts                       ← 既存
-│   ├── package.json                            ← Modify(codegen script 追加)
+│   ├── kubb.config.ts                          ← Task 14(codegen 設定)
+│   ├── package.json                            ← Modify(kubb deps + codegen script)
+│   ├── tsconfig.json                           ← Modify(allowImportingTsExtensions)
+│   ├── eslint.config.mjs                       ← Modify(lib/api/gen/** を ignore)
 │   └── tests/                                  ← ソース構造を mirror
 │       ├── features/
 │       │   └── payments/components/payment-form.test.tsx  ← Task 18(smoke)
@@ -2454,7 +2461,7 @@ git commit -m "feat(api): add GET /api/groups/{id}/settlement"
 # backend/scripts/dump_openapi.py
 """FastAPI app の OpenAPI スキーマを openapi.json にダンプする。
 
-Frontend の codegen(openapi-zod-client)が読み込む元ファイル。
+Frontend の codegen(kubb、Task 14)が読み込む元ファイル。
 モジュール load 時に Settings() が必要なので、test 用 env を default に。"""
 import json
 import os
@@ -2516,84 +2523,232 @@ git commit -m "feat(backend): add openapi.json dump script for frontend codegen"
 
 ---
 
-### Task 14: Frontend — Zod スキーマ自動生成 + api-client 移動
+### Task 14: Frontend — kubb による型 + Zod schema + client 自動生成
+
+> **codegen ツール選定**: `openapi-zod-client` は zod v3 出力に固定されており、zod v4 と非互換。本 plan では **kubb**(plugin ベースの OpenAPI codegen)を採用し、TypeScript 型(`plugin-ts`)・Zod schema(`plugin-zod`)・axios client 関数(`plugin-client`)を 1 度の `npm run codegen` で生成する。生成 client は SPLAI 既存の `apiClient`(X-Request-Id interceptor 付き)に橋渡しすることで、認可ヘッダ等の振る舞いを失わずに型安全な呼び出しが可能。
 
 **Files:**
 
-- Modify: `frontend/package.json`(deps + script)
-- Move: `frontend/lib/api-client.ts` → `frontend/lib/api/client.ts`(import パス整理)
-- Create: `frontend/lib/api/schemas.gen.ts`(自動生成、追跡対象)
+- Modify: `frontend/package.json`(zod v4 + kubb 群を deps に、`codegen` script を `kubb generate` に)
+- Modify: `frontend/tsconfig.json`(`allowImportingTsExtensions: true` を追加)
+- Modify: `frontend/eslint.config.mjs`(`lib/api/gen/**` を ignore)
+- Create: `frontend/kubb.config.ts`
+- Create: `frontend/lib/api/kubb-client.ts`(kubb 生成 client が呼ぶ HTTP 実行関数)
+- Create: `frontend/lib/api/gen/`(自動生成、追跡対象)
+- Modify: `frontend/lib/api/api-client.ts`(import パスを `@/lib/env` / `@/lib/request-id` に)
 
-- [ ] **Step 1: 既存 `api-client.ts` を `lib/api/client.ts` に移動**
-
-新しい構造(`lib/api/` ディレクトリ)に揃えるため、Phase 0 で作った `lib/api-client.ts` を移動する。中身の変更なし、import パスのみ揃える:
-
-```bash
-cd frontend
-mkdir -p lib/api
-git mv lib/api-client.ts lib/api/client.ts
-```
-
-既存の参照を更新(grep で確認):
-
-```bash
-grep -rn "@/lib/api-client" .
-# あれば @/lib/api/client にすべて置換
-```
-
-> Phase 0 時点では `lib/auth/`, `lib/env.ts`, `lib/request-id.ts` のみ存在。`lib/api/` を新設して client.ts を入れる。
-
-- [ ] **Step 2: codegen ツールをインストール**
+- [ ] **Step 1: 旧 codegen ツールを削除**
 
 ```bash
 cd frontend
-npm install -D openapi-zod-client
+npm uninstall zod openapi-zod-client
+rm -f lib/api/schemas.gen.ts
 ```
 
-- [ ] **Step 2: `package.json` に codegen script を追加**
+> `zod` を一旦消してから入れ直すのは、`openapi-zod-client` が依存する zod v3 が peer dep として残っていた場合の念のための clean install。
+
+- [ ] **Step 2: zod v4 と kubb を install**
+
+```bash
+npm install zod
+npm install -D '@kubb/cli@^4' '@kubb/core@^4' \
+  '@kubb/plugin-oas@^4' '@kubb/plugin-ts@^4' \
+  '@kubb/plugin-zod@^4' '@kubb/plugin-client@^4'
+```
+
+> `@kubb/cli` v5 は beta(2026-05 時点)なので v4 で揃える。v5 が安定したら一括で `^5` に上げる。
+
+- [ ] **Step 3: `kubb.config.ts` を作成**
+
+```typescript
+// frontend/kubb.config.ts
+import { defineConfig } from "@kubb/core";
+import { pluginClient } from "@kubb/plugin-client";
+import { pluginOas } from "@kubb/plugin-oas";
+import { pluginTs } from "@kubb/plugin-ts";
+import { pluginZod } from "@kubb/plugin-zod";
+
+export default defineConfig({
+  root: ".",
+  input: { path: "../backend/openapi.json" },
+  output: {
+    path: "./lib/api/gen",
+    clean: true,
+  },
+  plugins: [
+    pluginOas(),
+    pluginTs({
+      output: { path: "types" },
+      group: { type: "tag" },
+    }),
+    pluginZod({
+      output: { path: "zod" },
+      group: { type: "tag" },
+      typed: true,
+    }),
+    pluginClient({
+      output: { path: "clients" },
+      group: { type: "tag" },
+      // X-Request-Id interceptor 付きの自前 axios wrapper を使う。
+      // tsconfig の `@/*` alias 経由で解決する。
+      importPath: "@/lib/api/kubb-client",
+    }),
+  ],
+});
+```
+
+- [ ] **Step 4: `lib/api/kubb-client.ts` を作成**
+
+kubb 生成 client は default export された関数を `import fetch from '@/lib/api/kubb-client'` で読み込み、各 endpoint の HTTP 実行に使う。さらに `Client` `RequestConfig` `ResponseErrorConfig` を named export として要求する。
+
+```typescript
+// frontend/lib/api/kubb-client.ts
+import type { AxiosError, AxiosRequestConfig } from "axios";
+
+import { apiClient } from "./api-client";
+
+export type RequestConfig<TData = unknown> = AxiosRequestConfig<TData> & {
+  url: string;
+  method:
+    | "GET"
+    | "POST"
+    | "PUT"
+    | "PATCH"
+    | "DELETE"
+    | "HEAD"
+    | "OPTIONS"
+    | "get"
+    | "post"
+    | "put"
+    | "patch"
+    | "delete"
+    | "head"
+    | "options";
+};
+
+export type ResponseConfig<TData = unknown> = {
+  data: TData;
+  status: number;
+  statusText: string;
+  headers?: AxiosRequestConfig["headers"];
+};
+
+export type ResponseErrorConfig<TError = unknown> = AxiosError<TError>;
+
+// 全ての type param に default を持たせ、`Client` の bare 使用に備える
+export type Client<TData = unknown, TError = unknown, TVariables = unknown> = (
+  config: RequestConfig<TVariables>,
+) => Promise<ResponseConfig<TData>> & { error?: ResponseErrorConfig<TError> };
+
+// kubb 生成コードは `client<TData, TError, TVariables>(...)` の 3 引数で呼ぶため、
+// 全パラメータを受けられるシグネチャにする。TError は kubb 側の型整合のために
+// 受け取るだけで本体では未使用。
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const client = async <TData, TError = unknown, TVariables = unknown>(
+  config: RequestConfig<TVariables>,
+): Promise<ResponseConfig<TData>> => {
+  const response = await apiClient.request<TData, ResponseConfig<TData>>({
+    ...config,
+    headers: { ...config.headers },
+  });
+  return response;
+};
+
+export default client;
+```
+
+- [ ] **Step 5: 既存 `api-client.ts` の import パスを修正**
+
+Phase 0 で作った `lib/api/api-client.ts` の冒頭が相対 import になっている場合、`@/*` alias に統一して階層変更に強くする:
+
+```typescript
+// frontend/lib/api/api-client.ts(冒頭)
+import axios, { AxiosError } from "axios";
+import { env } from "@/lib/env";
+import { generateRequestId } from "@/lib/request-id";
+```
+
+- [ ] **Step 6: `package.json` の codegen script を更新**
 
 ```json
 {
   "scripts": {
-    "codegen": "openapi-zod-client ../backend/openapi.json -o lib/api/schemas.gen.ts --export-schemas"
+    "codegen": "kubb generate"
   }
 }
 ```
 
-- [ ] **Step 3: codegen 実行**
+- [ ] **Step 7: `tsconfig.json` に `allowImportingTsExtensions` を追加**
+
+kubb 生成コードは ESM 慣例で `import './foo.ts'` のように拡張子付きの import を出力する。Next.js は `noEmit: true` のため安全に許可できる:
+
+```json
+{
+  "compilerOptions": {
+    "noUncheckedIndexedAccess": true,
+    "noImplicitReturns": true,
+    "forceConsistentCasingInFileNames": true,
+    "allowImportingTsExtensions": true
+  }
+}
+```
+
+- [ ] **Step 8: `eslint.config.mjs` に `lib/api/gen/**` を ignore 追加\*\*
+
+自動生成コードは `any` や未使用変数で lint warn を出すが、再生成で上書きされるので lint 対象外にする。型安全性は `tsc --noEmit` で別途担保:
+
+```javascript
+globalIgnores([
+  '.next/**',
+  'out/**',
+  'build/**',
+  'next-env.d.ts',
+  // kubb による自動生成コード(再生成で上書きされるため lint 対象外)
+  'lib/api/gen/**',
+]),
+```
+
+- [ ] **Step 9: codegen 実行**
 
 ```bash
+cd frontend
 npm run codegen
-ls -la lib/api/schemas.gen.ts
-head -30 lib/api/schemas.gen.ts
 ```
 
-期待出力: `lib/api/schemas.gen.ts` が生成され、Zod スキーマと型定義が含まれる。
+期待出力: `lib/api/gen/` 配下に types / zod / clients が生成され、`Plugins: 4 successful, 4 total` と `Generated: <N> files`(endpoint 数によって変動)が表示される。
 
-- [ ] **Step 4: 動作確認(import エラーが無いこと)**
+- [ ] **Step 10: 動作確認**
 
 ```bash
-npm run typecheck
+npm run typecheck    # エラーなしを確認
+npm run lint         # エラーなしを確認(layout.tsx の既存 warning は無関係)
+npm run test         # 既存テストが pass し続けることを確認
 ```
 
-期待出力: pass。
-
-- [ ] **Step 5: 生成ファイルを Prettier 対象から除外(任意)**
-
-`.prettierignore` を作成または追記:
-
-```
-lib/api/schemas.gen.ts
-```
-
-これで `npm run format:check` が生成ファイルを評価しない。
-
-- [ ] **Step 6: コミット**
+- [ ] **Step 11: コミット**
 
 ```bash
-git add frontend/package.json frontend/package-lock.json frontend/lib/api/schemas.gen.ts frontend/.prettierignore
-git commit -m "feat(frontend): generate Zod schemas from backend OpenAPI"
+git add frontend/package.json frontend/package-lock.json \
+  frontend/kubb.config.ts frontend/tsconfig.json frontend/eslint.config.mjs \
+  frontend/lib/api/api-client.ts frontend/lib/api/kubb-client.ts frontend/lib/api/gen/
+git commit -m "feat(frontend): generate types/zod/client from backend OpenAPI via kubb"
 ```
+
+#### 生成された構造の使い方(参考)
+
+```typescript
+// 例: グループ作成
+import createGroupApi from "@/lib/api/gen/clients/groupsController/createGroupApiGroupsPost";
+import type { CreateGroupApiGroupsPostMutationRequest } from "@/lib/api/gen/types/groupsController/CreateGroupApiGroupsPost";
+
+const body: CreateGroupApiGroupsPostMutationRequest = {
+  name: "渋谷飲み会",
+  memberNames: ["Alice", "Bob"],
+};
+const { data } = await createGroupApi(body); // data: GroupResponse 型
+```
+
+zod schema は `lib/api/gen/zod/<tag>/...` に同名で置かれるので、`react-hook-form` の resolver や fetch 後の追加検証で利用できる。
 
 ---
 
@@ -2736,33 +2891,30 @@ git commit -m "feat(frontend): add localStorage-backed member identification"
 
 - [ ] **Step 1: API ラッパを feature 内に実装**
 
+> **kubb 生成 client を使う**: 型・スキーマ・client 関数はすべて `lib/api/gen/` に自動生成済み(Task 14)。feature 側はそれらを薄くラップし、UI が呼びやすい関数名と入力型に整える。型定義の重複は禁止 — kubb 生成型を re-export する。
+
 ```typescript
 // frontend/features/groups/api.ts
 "use client";
-import { apiClient } from "@/lib/api/client";
+import createGroupApi from "@/lib/api/gen/clients/groupsController/createGroupApiGroupsPost";
+import type {
+  CreateGroupApiGroupsPostMutationRequest,
+  CreateGroupApiGroupsPostMutationResponse,
+} from "@/lib/api/gen/types/groupsController/CreateGroupApiGroupsPost";
 
-export type CreateGroupInput = {
-  name: string;
-  eventDate?: string | null;
-  memberNames: string[];
-};
-
-export type CreateGroupResponse = {
-  id: string;
-  name: string;
-  eventDate: string | null;
-  currency: string;
-  creatorMemberId: string | null;
-  members: { id: string; name: string }[];
-};
+// kubb の長い型名を feature 内で短くエイリアスして UI から使いやすく
+export type CreateGroupInput = CreateGroupApiGroupsPostMutationRequest;
+export type CreateGroupResponse = CreateGroupApiGroupsPostMutationResponse;
 
 export async function createGroup(
   input: CreateGroupInput,
 ): Promise<CreateGroupResponse> {
-  const res = await apiClient.post<CreateGroupResponse>("/api/groups", input);
-  return res.data;
+  const { data } = await createGroupApi(input);
+  return data;
 }
 ```
+
+> **同じパターンを Task 17-20 でも適用**: `members/api.ts`, `payments/api.ts`, `settlement/api.ts` も同じく `lib/api/gen/clients/<tag>Controller/...` の関数 import + `lib/api/gen/types/<tag>Controller/...` の型エイリアスで構成する。生成ファイル名は OpenAPI の operationId 由来で長いが、feature 側で短く別名にすれば UI が触る箇所はクリーン。
 
 - [ ] **Step 2: フォームコンポーネント実装**
 
@@ -2914,7 +3066,7 @@ git commit -m "feat(frontend): replace landing page with create group form"
 "use client";
 import { useEffect, useState } from "react";
 
-import { apiClient } from "@/lib/api/client";
+import { apiClient } from "@/lib/api/api-client";
 
 export type GroupData = {
   id: string;
@@ -2970,7 +3122,7 @@ export function useGroup(groupId: string, memberId: string | null) {
 "use client";
 import { useState } from "react";
 
-import { apiClient } from "@/lib/api/client";
+import { apiClient } from "@/lib/api/api-client";
 
 type Props = {
   groupId: string;
@@ -3160,7 +3312,7 @@ git commit -m "feat(frontend): add /g/[uuid] page with member selection"
 ```typescript
 // frontend/features/payments/api.ts
 "use client";
-import { apiClient } from "@/lib/api/client";
+import { apiClient } from "@/lib/api/api-client";
 
 export type CreatePaymentInput = {
   payerId: string;
@@ -3463,7 +3615,7 @@ git commit -m "feat(frontend): add payment list with soft delete"
 ```typescript
 // frontend/features/settlement/api.ts
 "use client";
-import { apiClient } from "@/lib/api/client";
+import { apiClient } from "@/lib/api/api-client";
 
 export type Settlement = {
   transfers: { fromId: string; toId: string; amount: number }[];
