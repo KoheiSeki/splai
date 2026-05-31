@@ -510,9 +510,11 @@ git commit -m "feat(db): create core tables (groups, members, payments, payment_
 
 **Files:**
 
-- Create: `backend/app/services/__init__.py`
-- Create: `backend/app/services/settlement.py`
+- Create: `backend/app/utils/__init__.py`
+- Create: `backend/app/utils/settlement.py`
 - Create: `backend/tests/test_settlement.py`
+
+> **配置先 = `app/utils/`**: 清算アルゴリズムは I/O を持たない純粋関数なので `services/` ではなく `utils/` に置く。判断基準は `docs/conventions.md` §5.10、層モデルは `docs/superpowers/specs/design.md` §3「Backend 内部レイヤ構造」を参照。
 
 - [ ] **Step 1: 失敗するテストを書く**
 
@@ -520,7 +522,7 @@ git commit -m "feat(db): create core tables (groups, members, payments, payment_
 # backend/tests/test_settlement.py
 from uuid import uuid4
 
-from app.services.settlement import Transfer, settle
+from app.utils.settlement import Transfer, settle
 
 
 def test_empty_returns_no_transfers():
@@ -566,18 +568,18 @@ def test_returns_immutable_result():
 uv run pytest tests/test_settlement.py -v
 ```
 
-期待出力: `ModuleNotFoundError: No module named 'app.services'`
+期待出力: `ModuleNotFoundError: No module named 'app.utils'`
 
-- [ ] **Step 3: `app/services/__init__.py` を作成**
+- [ ] **Step 3: `app/utils/__init__.py` を作成**
 
 ```python
-# backend/app/services/__init__.py
+# backend/app/utils/__init__.py
 ```
 
-- [ ] **Step 4: `app/services/settlement.py` を実装**
+- [ ] **Step 4: `app/utils/settlement.py` を実装**
 
 ```python
-# backend/app/services/settlement.py
+# backend/app/utils/settlement.py
 """清算アルゴリズム(設計書 付録 A の貪欲法)。
 
 純粋関数:net_balances(各メンバーのネット収支)→ 最少送金回数の Transfer リスト。
@@ -912,6 +914,7 @@ from uuid import UUID
 from pydantic import Field
 
 from app.schemas.base import CamelModel
+from app.schemas.payment import PaymentSummary
 
 
 class CreateGroupRequest(CamelModel):
@@ -933,14 +936,11 @@ class GroupResponse(CamelModel):
     currency: str
     creator_member_id: UUID | None = None
     members: list[MemberSummary] = Field(default_factory=list)
-    payments: list["PaymentSummary"] = Field(default_factory=list)
-
-
-# 末尾で循環 import を解決
-from app.schemas.payment import PaymentSummary  # noqa: E402
-
-GroupResponse.model_rebuild()
+    payments: list[PaymentSummary] = Field(default_factory=list)
 ```
+
+> **Note**: `payment.py` は `group.py` を参照しないため循環 import は発生せず、`PaymentSummary` は通常通り上部 import で OK。
+> もし将来 `payment.py` 側から `GroupResponse` を参照する必要が出た場合は、片方を末尾 import + `model_rebuild()` で遅延解決する pattern が必要になる。
 
 - [ ] **Step 4: `app/schemas/member.py` 実装**
 
@@ -1063,54 +1063,119 @@ git commit -m "feat(backend): add Pydantic schemas for groups/members/payments/s
 
 **Files:**
 
-- Create: `backend/app/routers/groups.py`
-- Create: `backend/tests/test_groups_api.py`
+- Create: `backend/app/api/__init__.py`
+- Create: `backend/app/api/groups.py`(router)
+- Create: `backend/app/services/groups.py`(service: DB + ビジネスルール)
+- Create: `backend/tests/test_groups_api.py`(integration test)
 - Modify: `backend/app/main.py`(router 登録)
+
+> **レイヤ分離**: Task 6〜12 はすべて以下のパターンで実装する。
+>
+> - **router** (`app/api/`): HTTP I/O・認可・DTO 変換のみ。`db.add()` などを書かない。
+> - **service** (`app/services/`): DB 読み書き、トランザクション境界、ビジネスルール。ORM model を返す(Pydantic schema には依存しない)。
+> - **utils** (`app/utils/`): 純粋関数のみ。
+>
+> 詳細は `docs/conventions.md` §5.10、`docs/superpowers/specs/design.md` §3 参照。
+
+- [ ] **Step 0: `tests/conftest.py` に共通 `client` fixture を追加**(初回 API テスト時のみ)
+
+API integration test は以下の fixture を共通利用する。`fastapi.testclient.TestClient` ではなく `httpx.AsyncClient` + `ASGITransport` を使う理由は、`asyncpg` と TestClient の event loop 競合(`Future attached to a different loop`)を回避するため。
+
+```python
+# backend/tests/conftest.py に追加(top-level の env setup の後)
+import pytest
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
+
+from app.config import get_settings
+from app.db.session import get_session
+from app.main import app
+
+
+@pytest.fixture
+async def client():
+    """API integration test 用の AsyncClient(各テスト fresh engine + NullPool)。
+
+    - TestClient を使った場合の event loop 競合を回避
+    - NullPool により test 間で connection を共有しない
+    - `.env.local` の DATABASE_URL に接続する(conftest top-level で設定済み)
+    - test ごとにユニークな group 名を使えば dev DB のデータ汚染は問題にならない
+    """
+    settings = get_settings()
+    engine = create_async_engine(settings.database_url, poolclass=NullPool)
+    SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def _override_get_session():
+        async with SessionLocal() as session:
+            yield session
+
+    app.dependency_overrides[get_session] = _override_get_session
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as ac:
+            yield ac
+    finally:
+        app.dependency_overrides.clear()
+        await engine.dispose()
+```
+
+加えて、`conftest.py` の top-level で `.env.local` の `DATABASE_URL` を test 用 `os.environ` にセットする必要がある(engine が module import 時に作られるため)。Phase 0 で書いた conftest を以下のように更新:
+
+```python
+# conftest.py 冒頭(import os の直後)
+import os
+from pathlib import Path
+from dotenv import dotenv_values
+
+os.environ.setdefault("APP_ENV", "test")
+_env_file = Path(__file__).parent.parent / ".env.local"
+_real_db_url = dotenv_values(_env_file).get("DATABASE_URL")
+os.environ.setdefault(
+    "DATABASE_URL",
+    _real_db_url or "postgresql+asyncpg://test:test@localhost/test",
+)
+```
 
 - [ ] **Step 1: 失敗するテストを書く**
 
 ```python
 # backend/tests/test_groups_api.py
-from uuid import UUID
-
-import pytest
-from fastapi.testclient import TestClient
-
-from app.main import app
+from httpx import AsyncClient
 
 
-@pytest.fixture(autouse=True)
-def _use_dev_env(monkeypatch):
-    monkeypatch.setenv("APP_ENV", "dev")
-    yield
-
-
-def test_create_group_returns_201_with_creator_member_id():
-    res = TestClient(app).post(
+async def test_create_group_returns_201_with_creator_member_id(client: AsyncClient):
+    res = await client.post(
         "/api/groups",
         json={"name": "渋谷飲み会", "memberNames": ["Alice", "Bob"]},
     )
     assert res.status_code == 201
     body = res.json()
     assert body["name"] == "渋谷飲み会"
-    assert UUID(body["id"])
-    assert UUID(body["creatorMemberId"])
+    assert body["id"]
+    assert body["creatorMemberId"]
     # creator_member_id は memberNames の先頭("Alice")の id
     assert len(body["members"]) == 2
     assert body["members"][0]["name"] == "Alice"
 
 
-def test_create_group_with_no_members_creates_empty_group():
-    res = TestClient(app).post("/api/groups", json={"name": "未確定", "memberNames": []})
+async def test_create_group_with_no_members_creates_empty_group(client: AsyncClient):
+    res = await client.post(
+        "/api/groups", json={"name": "未確定", "memberNames": []}
+    )
     assert res.status_code == 201
-    assert res.json()["members"] == []
-    assert res.json()["creatorMemberId"] is None
+    body = res.json()
+    assert body["members"] == []
+    assert body["creatorMemberId"] is None
 
 
-def test_create_group_validates_name_required():
-    res = TestClient(app).post("/api/groups", json={"memberNames": []})
+async def test_create_group_validates_name_required(client: AsyncClient):
+    res = await client.post("/api/groups", json={"memberNames": []})
     assert res.status_code == 422
 ```
+
+> **`pytest-asyncio` の `asyncio_mode = "auto"`** 設定により、`async def test_*` は自動的に async test として扱われる(`@pytest.mark.asyncio` 不要)。`pyproject.toml` で設定済み。
 
 - [ ] **Step 2: テスト実行 → 失敗確認**
 
@@ -1120,20 +1185,68 @@ uv run pytest tests/test_groups_api.py -v
 
 期待出力: 404 になる(エンドポイント未実装)。
 
-- [ ] **Step 3: `app/routers/groups.py` 実装**
+- [ ] **Step 3: `app/services/groups.py` を実装(DB + ビジネスルール)**
 
 ```python
-# backend/app/routers/groups.py
+# backend/app/services/groups.py
+"""グループドメインのビジネスロジック(DB 操作とビジネスルール)。
+
+router からは HTTP・DTO 変換を取り除き、ここに DB 読み書き・トランザクション境界・
+複数エンティティの atomic 作成等を集約する。Pydantic schema には依存しない
+(プリミティブ引数 → ORM model 戻り値)。
+"""
 from __future__ import annotations
 
-from uuid import UUID
+from datetime import date
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models import Group, Member
+
+
+async def create_group_with_initial_members(
+    db: AsyncSession,
+    *,
+    name: str,
+    event_date: date | None,
+    member_names: list[str],
+) -> tuple[Group, list[Member]]:
+    """グループ + 初期メンバーを 1 トランザクションで作成する。
+
+    member_names の順序は意味を持つ。先頭が「作成者」(creator)として扱われる。
+    """
+    group = Group(name=name, event_date=event_date)
+    db.add(group)
+    await db.flush()  # group.id を確定させる
+
+    members = [Member(group_id=group.id, name=n) for n in member_names]
+    db.add_all(members)
+    await db.commit()
+    await db.refresh(group)
+    for m in members:
+        await db.refresh(m)
+
+    return group, members
+```
+
+- [ ] **Step 4: `app/api/__init__.py` を作成**
+
+```python
+# backend/app/api/__init__.py
+```
+
+- [ ] **Step 5: `app/api/groups.py` を実装(router: HTTP I/O のみ)**
+
+```python
+# backend/app/api/groups.py
+from __future__ import annotations
 
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
-from app.models import Group, Member
 from app.schemas.group import CreateGroupRequest, GroupResponse, MemberSummary
+from app.services import groups as groups_service
 
 router = APIRouter(prefix="/api/groups", tags=["groups"])
 
@@ -1148,18 +1261,12 @@ async def create_group(
     認可なし: グループ作成時はまだ member が存在しないため X-Member-Id を要求しない
     (設計書 §7 共通仕様の例外)。
     """
-    group = Group(name=body.name, event_date=body.event_date)
-    db.add(group)
-    await db.flush()
-
-    members: list[Member] = [
-        Member(group_id=group.id, name=name) for name in body.member_names
-    ]
-    db.add_all(members)
-    await db.commit()
-    await db.refresh(group)
-    for m in members:
-        await db.refresh(m)
+    group, members = await groups_service.create_group_with_initial_members(
+        db,
+        name=body.name,
+        event_date=body.event_date,
+        member_names=body.member_names,
+    )
 
     return GroupResponse(
         id=group.id,
@@ -1175,18 +1282,20 @@ async def create_group(
     )
 ```
 
-- [ ] **Step 4: `app/main.py` に router を登録**
+- [ ] **Step 6: `app/main.py` に router を登録**
 
 ```python
-# 既存の include_router 群に追加:
-from app.routers import groups, health  # 既存に groups を追加
+# 既存の include_router 群を更新:
+from app.api import groups, health
 
 # create_app 内:
 app.include_router(health.router)
 app.include_router(groups.router)
 ```
 
-- [ ] **Step 5: テスト実行 → PASS確認**
+> **ディレクトリは `app/api/` に統一**: Phase 0 で作った `app/routers/health.py` は Task 6 着手時に `app/api/health.py` に移し、`app/routers/` ディレクトリは削除する(8 行の小さなファイルなので機能影響なし)。Phase 1 以降で追加する endpoint は全て `app/api/` 配下に置く。
+
+- [ ] **Step 7: テスト実行 → PASS確認**
 
 ```bash
 uv run pytest tests/test_groups_api.py -v
@@ -1194,10 +1303,10 @@ uv run pytest tests/test_groups_api.py -v
 
 期待出力: 3 passed.
 
-- [ ] **Step 6: コミット**
+- [ ] **Step 8: コミット**
 
 ```bash
-git add backend/app/routers/groups.py backend/app/main.py backend/tests/test_groups_api.py
+git add backend/app/api/ backend/app/services/groups.py backend/app/main.py backend/tests/test_groups_api.py
 git commit -m "feat(api): add POST /api/groups (create group with initial members)"
 ```
 
@@ -1207,8 +1316,15 @@ git commit -m "feat(api): add POST /api/groups (create group with initial member
 
 **Files:**
 
-- Modify: `backend/app/routers/groups.py`(GET endpoint 追加)
+- Modify: `backend/app/services/groups.py`(`get_group_full` を追加)
+- Modify: `backend/app/api/groups.py`(GET endpoint 追加)
 - Modify: `backend/tests/test_groups_api.py`
+
+> **Task 7-12 の API 整合テスト共通**: Task 6 で `tests/conftest.py` に追加した `client` fixture(AsyncClient + NullPool)を全テストで使う。下記サンプルが `TestClient(app).post(...)` などの旧形式で書かれている場合は、Task 6 の AsyncClient パターンに置き換えて実装する:
+>
+> - `def test_xxx():` → `async def test_xxx(client: AsyncClient):`
+> - `TestClient(app).post(...)` → `await client.post(...)`
+> - `_use_dev_env` のような APP_ENV monkeypatch fixture は不要(conftest top-level が `.env.local` の URL を設定済み)。
 
 - [ ] **Step 1: 失敗するテストを書く**(test_groups_api.py に追記)
 
@@ -1255,28 +1371,27 @@ uv run pytest tests/test_groups_api.py::test_get_group_returns_full_payload -v
 
 期待出力: 405 か 404(エンドポイント未実装)。
 
-- [ ] **Step 3: `groups.py` に GET 実装**
+- [ ] **Step 3: `services/groups.py` に取得ロジックを追加**
 
 ```python
-# backend/app/routers/groups.py に追加
+# backend/app/services/groups.py に追加
+from uuid import UUID
+
 from sqlalchemy import select
 
-from app.auth.deps import require_member
 from app.exceptions.domain import GroupNotFound
-from app.models import Member, Payment, PaymentShare
-from app.schemas.payment import PaymentSummary, ShareSummary
+from app.models import Group, Member, Payment, PaymentShare
 
 
-@router.get("/{group_id}", response_model=GroupResponse)
-async def get_group(
+async def get_group_full(
+    db: AsyncSession,
+    *,
     group_id: UUID,
-    member: Member = Depends(require_member),
-    db: AsyncSession = Depends(get_session),
-) -> GroupResponse:
-    """グループ情報 + メンバー + 未削除の支払い一覧を取得。
+) -> tuple[Group, list[Member], list[Payment], dict[UUID, list[PaymentShare]]]:
+    """グループ + メンバー + 未削除支払い + 各支払いの shares を取得する。
 
     Phase 1 では Payment ↔ PaymentShare の relationship を ORM 上で
-    定義していないため、shares は別クエリで取得する(YAGNI、Phase 5 で
+    定義していないため、shares は別クエリで取得する(YAGNI。Phase 5 で
     パフォーマンス改善時に relationship + selectinload を導入する)。
     """
     group = await db.scalar(select(Group).where(Group.id == group_id))
@@ -1305,6 +1420,31 @@ async def get_group(
         )
         for s in shares_rows.all():
             shares_by_payment[s.payment_id].append(s)
+
+    return group, list(members), list(payments), shares_by_payment
+```
+
+- [ ] **Step 4: `api/groups.py` に GET 実装(router: DTO 変換のみ)**
+
+```python
+# backend/app/api/groups.py に追加
+from uuid import UUID
+
+from app.auth.deps import require_member
+from app.models import Member
+from app.schemas.payment import PaymentSummary, ShareSummary
+
+
+@router.get("/{group_id}", response_model=GroupResponse)
+async def get_group(
+    group_id: UUID,
+    member: Member = Depends(require_member),
+    db: AsyncSession = Depends(get_session),
+) -> GroupResponse:
+    """グループ情報 + メンバー + 未削除の支払い一覧を取得。"""
+    group, members, payments, shares_by_payment = await groups_service.get_group_full(
+        db, group_id=group_id
+    )
 
     return GroupResponse(
         id=group.id,
@@ -1335,7 +1475,7 @@ async def get_group(
     )
 ```
 
-- [ ] **Step 4: テスト実行 → PASS確認**
+- [ ] **Step 5: テスト実行 → PASS確認**
 
 ```bash
 uv run pytest tests/test_groups_api.py -v
@@ -1343,10 +1483,10 @@ uv run pytest tests/test_groups_api.py -v
 
 期待出力: 6 passed(Task 6 の 3 + 今回の 3)。
 
-- [ ] **Step 5: コミット**
+- [ ] **Step 6: コミット**
 
 ```bash
-git add backend/app/routers/groups.py backend/tests/test_groups_api.py
+git add backend/app/api/groups.py backend/app/services/groups.py backend/tests/test_groups_api.py
 git commit -m "feat(api): add GET /api/groups/{id} with X-Member-Id authorization"
 ```
 
@@ -1356,7 +1496,8 @@ git commit -m "feat(api): add GET /api/groups/{id} with X-Member-Id authorizatio
 
 **Files:**
 
-- Create: `backend/app/routers/members.py`
+- Create: `backend/app/services/members.py`
+- Create: `backend/app/api/members.py`
 - Create: `backend/tests/test_members_api.py`
 - Modify: `backend/app/main.py`
 
@@ -1409,10 +1550,37 @@ def test_add_member_requires_x_member_id():
 uv run pytest tests/test_members_api.py -v
 ```
 
-- [ ] **Step 3: `app/routers/members.py` 実装**
+- [ ] **Step 3: `services/members.py` 実装(DB)**
 
 ```python
-# backend/app/routers/members.py
+# backend/app/services/members.py
+from __future__ import annotations
+
+from uuid import UUID
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models import Member
+
+
+async def add_member_to_group(
+    db: AsyncSession,
+    *,
+    group_id: UUID,
+    name: str,
+) -> Member:
+    """既存グループにメンバーを 1 名追加する。"""
+    new_member = Member(group_id=group_id, name=name)
+    db.add(new_member)
+    await db.commit()
+    await db.refresh(new_member)
+    return new_member
+```
+
+- [ ] **Step 4: `api/members.py` 実装(router)**
+
+```python
+# backend/app/api/members.py
 from __future__ import annotations
 
 from uuid import UUID
@@ -1422,8 +1590,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import require_member
 from app.db.session import get_session
-from app.models import Member as MemberModel
+from app.models import Member
 from app.schemas.member import CreateMemberRequest, MemberResponse
+from app.services import members as members_service
 
 router = APIRouter(prefix="/api/groups/{group_id}/members", tags=["members"])
 
@@ -1432,13 +1601,12 @@ router = APIRouter(prefix="/api/groups/{group_id}/members", tags=["members"])
 async def add_member(
     group_id: UUID,
     body: CreateMemberRequest,
-    _requester: MemberModel = Depends(require_member),
+    _requester: Member = Depends(require_member),
     db: AsyncSession = Depends(get_session),
 ) -> MemberResponse:
-    new_member = MemberModel(group_id=group_id, name=body.name)
-    db.add(new_member)
-    await db.commit()
-    await db.refresh(new_member)
+    new_member = await members_service.add_member_to_group(
+        db, group_id=group_id, name=body.name
+    )
     return MemberResponse(
         id=new_member.id,
         group_id=new_member.group_id,
@@ -1447,24 +1615,24 @@ async def add_member(
     )
 ```
 
-- [ ] **Step 4: `app/main.py` に router 登録**
+- [ ] **Step 5: `app/main.py` に router 登録**
 
 ```python
-from app.routers import groups, health, members
+from app.api import groups, members  # 追加
 ...
 app.include_router(members.router)
 ```
 
-- [ ] **Step 5: テスト実行 → PASS確認**
+- [ ] **Step 6: テスト実行 → PASS確認**
 
 ```bash
 uv run pytest tests/test_members_api.py -v
 ```
 
-- [ ] **Step 6: コミット**
+- [ ] **Step 7: コミット**
 
 ```bash
-git add backend/app/routers/members.py backend/app/main.py backend/tests/test_members_api.py
+git add backend/app/api/members.py backend/app/services/members.py backend/app/main.py backend/tests/test_members_api.py
 git commit -m "feat(api): add POST /api/groups/{id}/members"
 ```
 
@@ -1474,7 +1642,8 @@ git commit -m "feat(api): add POST /api/groups/{id}/members"
 
 **Files:**
 
-- Create: `backend/app/routers/payments.py`
+- Create: `backend/app/services/payments.py`
+- Create: `backend/app/api/payments.py`
 - Create: `backend/tests/test_payments_api.py`
 - Modify: `backend/app/main.py`
 - Modify: `backend/app/exceptions/domain.py`(InvalidPaymentShares 追加)
@@ -1559,43 +1728,52 @@ def test_create_payment_rejects_share_for_non_member():
 uv run pytest tests/test_payments_api.py -v
 ```
 
-- [ ] **Step 4: `app/routers/payments.py` 実装**
+- [ ] **Step 4: `services/payments.py` 実装(DB + ビジネスルール)**
 
 ```python
-# backend/app/routers/payments.py
+# backend/app/services/payments.py
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.deps import require_member
-from app.db.session import get_session
 from app.exceptions.domain import InvalidPaymentShares
 from app.models import Member, Payment, PaymentShare, PaymentSource, ShareType
-from app.schemas.payment import (
-    CreatePaymentRequest,
-    PaymentSummary,
-    ShareSummary,
-)
-
-# /api/groups/{group_id}/payments と /api/payments/{payment_id} を 1 router に統合
-group_router = APIRouter(prefix="/api/groups/{group_id}/payments", tags=["payments"])
-payment_router = APIRouter(prefix="/api/payments", tags=["payments"])
 
 
-@group_router.post("", status_code=status.HTTP_201_CREATED, response_model=PaymentSummary)
-async def create_payment(
+@dataclass(frozen=True)
+class ShareInputDTO:
+    """service 層の入力 DTO(Pydantic 非依存)。
+
+    api 層は CreatePaymentRequest.shares を ShareInputDTO のリストに
+    変換してから service を呼ぶ。
+    """
+
+    member_id: UUID
+    share_type: str  # "equal" | "ratio" | "amount"
+    share_value: float
+
+
+async def create_payment_with_shares(
+    db: AsyncSession,
+    *,
     group_id: UUID,
-    body: CreatePaymentRequest,
-    _requester: Member = Depends(require_member),
-    db: AsyncSession = Depends(get_session),
-) -> PaymentSummary:
-    # shares の member_id がすべて group に属することを検証
-    member_ids = {s.member_id for s in body.shares} | {body.payer_id}
+    payer_id: UUID,
+    amount: int,
+    description: str,
+    paid_at: datetime | None,
+    shares: list[ShareInputDTO],
+) -> tuple[Payment, list[PaymentShare]]:
+    """支払い + shares を 1 トランザクションで作成する。
+
+    payer_id と全 shares の member_id が group_id に属していることを検証し、
+    属していなければ InvalidPaymentShares を raise する。
+    """
+    member_ids = {s.member_id for s in shares} | {payer_id}
     rows = await db.scalars(
         select(Member.id).where(
             Member.group_id == group_id, Member.id.in_(member_ids)
@@ -1610,27 +1788,80 @@ async def create_payment(
 
     payment = Payment(
         group_id=group_id,
-        payer_id=body.payer_id,
-        amount=body.amount,
-        description=body.description,
-        paid_at=body.paid_at or datetime.now(tz=timezone.utc),
+        payer_id=payer_id,
+        amount=amount,
+        description=description,
+        paid_at=paid_at or datetime.now(tz=timezone.utc),
         source=PaymentSource.MANUAL,
     )
     db.add(payment)
     await db.flush()
 
-    shares = [
+    share_models = [
         PaymentShare(
             payment_id=payment.id,
             member_id=s.member_id,
             share_type=ShareType(s.share_type),
             share_value=s.share_value,
         )
-        for s in body.shares
+        for s in shares
     ]
-    db.add_all(shares)
+    db.add_all(share_models)
     await db.commit()
     await db.refresh(payment)
+    return payment, share_models
+```
+
+- [ ] **Step 5: `api/payments.py` 実装(router)**
+
+```python
+# backend/app/api/payments.py
+from __future__ import annotations
+
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.auth.deps import require_member
+from app.db.session import get_session
+from app.models import Member
+from app.schemas.payment import (
+    CreatePaymentRequest,
+    PaymentSummary,
+    ShareSummary,
+)
+from app.services import payments as payments_service
+from app.services.payments import ShareInputDTO
+
+# /api/groups/{group_id}/payments と /api/payments/{payment_id} を 1 ファイルに統合
+group_router = APIRouter(prefix="/api/groups/{group_id}/payments", tags=["payments"])
+payment_router = APIRouter(prefix="/api/payments", tags=["payments"])
+
+
+@group_router.post("", status_code=status.HTTP_201_CREATED, response_model=PaymentSummary)
+async def create_payment(
+    group_id: UUID,
+    body: CreatePaymentRequest,
+    _requester: Member = Depends(require_member),
+    db: AsyncSession = Depends(get_session),
+) -> PaymentSummary:
+    payment, share_models = await payments_service.create_payment_with_shares(
+        db,
+        group_id=group_id,
+        payer_id=body.payer_id,
+        amount=body.amount,
+        description=body.description,
+        paid_at=body.paid_at,
+        shares=[
+            ShareInputDTO(
+                member_id=s.member_id,
+                share_type=s.share_type,
+                share_value=s.share_value,
+            )
+            for s in body.shares
+        ],
+    )
 
     return PaymentSummary(
         id=payment.id,
@@ -1645,15 +1876,15 @@ async def create_payment(
                 share_type=s.share_type.value,
                 share_value=float(s.share_value),
             )
-            for s in shares
+            for s in share_models
         ],
     )
 ```
 
-- [ ] **Step 5: `app/main.py` に登録**
+- [ ] **Step 6: `app/main.py` に登録**
 
 ```python
-from app.routers import groups, health, members, payments
+from app.api import groups, members, payments
 ...
 app.include_router(payments.group_router)
 app.include_router(payments.payment_router)
@@ -1668,8 +1899,9 @@ uv run pytest tests/test_payments_api.py -v
 - [ ] **Step 7: コミット**
 
 ```bash
-git add backend/app/routers/payments.py backend/app/main.py \
-  backend/app/exceptions/domain.py backend/tests/test_payments_api.py
+git add backend/app/api/payments.py backend/app/services/payments.py \
+  backend/app/main.py backend/app/exceptions/domain.py \
+  backend/tests/test_payments_api.py
 git commit -m "feat(api): add POST /api/groups/{id}/payments with shares validation"
 ```
 
@@ -1679,7 +1911,8 @@ git commit -m "feat(api): add POST /api/groups/{id}/payments with shares validat
 
 **Files:**
 
-- Modify: `backend/app/routers/payments.py`
+- Modify: `backend/app/services/payments.py`(update + helper を追加)
+- Modify: `backend/app/api/payments.py`
 - Modify: `backend/tests/test_payments_api.py`
 
 - [ ] **Step 1: 失敗するテストを追加**
@@ -1719,70 +1952,81 @@ def test_patch_payment_updates_amount_and_description():
 
 - [ ] **Step 2: テスト失敗確認**
 
-- [ ] **Step 3: `payment_router` に PATCH 実装**
+- [ ] **Step 3: `services/payments.py` に共通ヘルパと update を追加**
 
 ```python
-# backend/app/routers/payments.py に追加
-from fastapi import Header
-from app.schemas.payment import UpdatePaymentRequest
+# backend/app/services/payments.py に追加
+from datetime import datetime
+from uuid import UUID
+
+from app.exceptions.domain import GroupNotFound, MemberMismatch
 
 
-async def _require_member_for_payment(
+async def get_payment_in_group(
+    db: AsyncSession,
+    *,
     payment_id: UUID,
-    x_group_id: UUID = Header(..., alias="X-Group-Id"),
-    x_member_id: UUID = Header(..., alias="X-Member-Id"),
-    db: AsyncSession = Depends(get_session),
+    group_id: UUID,
+    member_id: UUID,
 ) -> tuple[Payment, Member]:
-    """X-Group-Id + X-Member-Id 経由で対象 payment を取り出すヘルパ。"""
-    from app.exceptions.domain import GroupNotFound, MemberMismatch
+    """payment_id が group_id に属し、member_id がその group のメンバーであることを検証。
 
+    PATCH/DELETE は path に group_id を持たないため、X-Group-Id ヘッダで対象を
+    指定する。検証ロジックは router 側に置かず service に集約する。
+    """
     payment = await db.scalar(select(Payment).where(Payment.id == payment_id))
-    if payment is None or payment.group_id != x_group_id:
-        raise GroupNotFound(f"payment {payment_id} not found in group {x_group_id}")
+    if payment is None or payment.group_id != group_id:
+        raise GroupNotFound(f"payment {payment_id} not found in group {group_id}")
 
     member = await db.scalar(
-        select(Member).where(Member.id == x_member_id, Member.group_id == x_group_id)
+        select(Member).where(Member.id == member_id, Member.group_id == group_id)
     )
     if member is None:
-        raise MemberMismatch(
-            f"member {x_member_id} is not in group {x_group_id}"
-        )
+        raise MemberMismatch(f"member {member_id} is not in group {group_id}")
     return payment, member
 
 
-@payment_router.patch("/{payment_id}", response_model=PaymentSummary)
-async def update_payment(
-    payment_id: UUID,
-    body: UpdatePaymentRequest,
-    ctx: tuple[Payment, Member] = Depends(_require_member_for_payment),
-    db: AsyncSession = Depends(get_session),
-) -> PaymentSummary:
-    payment, _member = ctx
+@dataclass(frozen=True)
+class PaymentUpdateDTO:
+    """update 用入力 DTO。各フィールド None = 変更なし。"""
 
-    if body.payer_id is not None:
-        payment.payer_id = body.payer_id
-    if body.amount is not None:
-        payment.amount = body.amount
-    if body.description is not None:
-        payment.description = body.description
-    if body.paid_at is not None:
-        payment.paid_at = body.paid_at
+    payer_id: UUID | None = None
+    amount: int | None = None
+    description: str | None = None
+    paid_at: datetime | None = None
+    shares: list[ShareInputDTO] | None = None
 
-    if body.shares is not None:
-        # 既存 shares を全消しして入れ直す(MVP の単純戦略)
+
+async def update_payment_with_shares(
+    db: AsyncSession,
+    *,
+    payment: Payment,
+    update: PaymentUpdateDTO,
+) -> tuple[Payment, list[PaymentShare]]:
+    """既存 payment を編集する。shares が指定された場合は全置換。"""
+    if update.payer_id is not None:
+        payment.payer_id = update.payer_id
+    if update.amount is not None:
+        payment.amount = update.amount
+    if update.description is not None:
+        payment.description = update.description
+    if update.paid_at is not None:
+        payment.paid_at = update.paid_at
+
+    if update.shares is not None:
         await db.execute(
             PaymentShare.__table__.delete().where(
-                PaymentShare.payment_id == payment_id
+                PaymentShare.payment_id == payment.id
             )
         )
         new_shares = [
             PaymentShare(
-                payment_id=payment_id,
+                payment_id=payment.id,
                 member_id=s.member_id,
                 share_type=ShareType(s.share_type),
                 share_value=s.share_value,
             )
-            for s in body.shares
+            for s in update.shares
         ]
         db.add_all(new_shares)
 
@@ -1790,9 +2034,56 @@ async def update_payment(
     await db.refresh(payment)
 
     shares_rows = await db.scalars(
-        select(PaymentShare).where(PaymentShare.payment_id == payment_id)
+        select(PaymentShare).where(PaymentShare.payment_id == payment.id)
     )
-    shares = shares_rows.all()
+    return payment, list(shares_rows.all())
+```
+
+- [ ] **Step 4: `api/payments.py` に PATCH 実装**
+
+```python
+# backend/app/api/payments.py に追加
+from fastapi import Header
+
+from app.schemas.payment import UpdatePaymentRequest
+from app.services.payments import PaymentUpdateDTO
+
+
+@payment_router.patch("/{payment_id}", response_model=PaymentSummary)
+async def update_payment(
+    payment_id: UUID,
+    body: UpdatePaymentRequest,
+    x_group_id: UUID = Header(..., alias="X-Group-Id"),
+    x_member_id: UUID = Header(..., alias="X-Member-Id"),
+    db: AsyncSession = Depends(get_session),
+) -> PaymentSummary:
+    """支払いを編集する。
+
+    PATCH は path に group_id を持たないため、X-Group-Id ヘッダで認可対象を指定。
+    """
+    payment, _member = await payments_service.get_payment_in_group(
+        db, payment_id=payment_id, group_id=x_group_id, member_id=x_member_id,
+    )
+
+    update = PaymentUpdateDTO(
+        payer_id=body.payer_id,
+        amount=body.amount,
+        description=body.description,
+        paid_at=body.paid_at,
+        shares=[
+            ShareInputDTO(
+                member_id=s.member_id,
+                share_type=s.share_type,
+                share_value=s.share_value,
+            )
+            for s in body.shares
+        ] if body.shares is not None else None,
+    )
+
+    payment, share_models = await payments_service.update_payment_with_shares(
+        db, payment=payment, update=update,
+    )
+
     return PaymentSummary(
         id=payment.id,
         payer_id=payment.payer_id,
@@ -1806,17 +2097,19 @@ async def update_payment(
                 share_type=s.share_type.value,
                 share_value=float(s.share_value),
             )
-            for s in shares
+            for s in share_models
         ],
     )
 ```
 
-- [ ] **Step 4: テスト実行 → PASS確認**
+> **設計判断**: PATCH/DELETE の認可は `Depends(require_member)` を使えない(path に group_id がないため)。代わりに service の `get_payment_in_group` で X-Group-Id + X-Member-Id を検証する。これは設計書 §7 共通仕様の例外運用。
 
-- [ ] **Step 5: コミット**
+- [ ] **Step 5: テスト実行 → PASS確認**
+
+- [ ] **Step 6: コミット**
 
 ```bash
-git add backend/app/routers/payments.py backend/tests/test_payments_api.py
+git add backend/app/api/payments.py backend/app/services/payments.py backend/tests/test_payments_api.py
 git commit -m "feat(api): add PATCH /api/payments/{id} for editing payments"
 ```
 
@@ -1826,7 +2119,8 @@ git commit -m "feat(api): add PATCH /api/payments/{id} for editing payments"
 
 **Files:**
 
-- Modify: `backend/app/routers/payments.py`
+- Modify: `backend/app/services/payments.py`(`soft_delete_payment` を追加)
+- Modify: `backend/app/api/payments.py`
 - Modify: `backend/tests/test_payments_api.py`
 
 - [ ] **Step 1: 失敗するテストを追加**
@@ -1862,29 +2156,43 @@ def test_delete_payment_soft_deletes():
 
 - [ ] **Step 2: 失敗確認**
 
-- [ ] **Step 3: 実装**
+- [ ] **Step 3: `services/payments.py` に soft delete を追加**
 
 ```python
-# backend/app/routers/payments.py に追加
+# backend/app/services/payments.py に追加
 from datetime import datetime, timezone
+
+
+async def soft_delete_payment(db: AsyncSession, *, payment: Payment) -> None:
+    """payment.deleted_at に現在時刻を入れて論理削除する。"""
+    payment.deleted_at = datetime.now(tz=timezone.utc)
+    await db.commit()
+```
+
+- [ ] **Step 4: `api/payments.py` に DELETE 実装**
+
+```python
+# backend/app/api/payments.py に追加
 from fastapi import Response
 
 
 @payment_router.delete("/{payment_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_payment(
     payment_id: UUID,
-    ctx: tuple[Payment, Member] = Depends(_require_member_for_payment),
+    x_group_id: UUID = Header(..., alias="X-Group-Id"),
+    x_member_id: UUID = Header(..., alias="X-Member-Id"),
     db: AsyncSession = Depends(get_session),
 ) -> Response:
-    payment, _member = ctx
-    payment.deleted_at = datetime.now(tz=timezone.utc)
-    await db.commit()
+    payment, _member = await payments_service.get_payment_in_group(
+        db, payment_id=payment_id, group_id=x_group_id, member_id=x_member_id,
+    )
+    await payments_service.soft_delete_payment(db, payment=payment)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 ```
 
-- [ ] **Step 4: PASS確認**
+- [ ] **Step 5: PASS確認**
 
-- [ ] **Step 5: コミット**
+- [ ] **Step 6: コミット**
 
 ```bash
 git commit -am "feat(api): add DELETE /api/payments/{id} (soft delete)"
@@ -1896,9 +2204,13 @@ git commit -am "feat(api): add DELETE /api/payments/{id} (soft delete)"
 
 **Files:**
 
-- Create: `backend/app/routers/settlement.py`
+- Modify: `backend/app/utils/settlement.py`(`compute_share_amounts` を追加)
+- Create: `backend/app/services/settlement.py`(DB load + ネット収支計算)
+- Create: `backend/app/api/settlement.py`(router)
 - Create: `backend/tests/test_settlement_api.py`
 - Modify: `backend/app/main.py`
+
+> **3 層分離**: 純粋計算 = `utils/settlement.py`、DB アクセス = `services/settlement.py`、HTTP I/O = `api/settlement.py`。同名の 3 ファイルが層別の責務を担う。
 
 - [ ] **Step 1: 失敗するテストを書く**
 
@@ -1955,65 +2267,95 @@ def test_settlement_for_three_party_equal_split():
 
 - [ ] **Step 2: 失敗確認**
 
-- [ ] **Step 3: `app/routers/settlement.py` 実装**
+- [ ] **Step 3: `utils/settlement.py` に `compute_share_amounts` を追加(純粋関数)**
 
 ```python
-# backend/app/routers/settlement.py
-from __future__ import annotations
-
-from collections import defaultdict
-from uuid import UUID
-
-from fastapi import APIRouter, Depends
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.auth.deps import require_member
-from app.db.session import get_session
-from app.models import Member, Payment, PaymentShare, ShareType
-from app.schemas.settlement import SettlementResponse, TransferDTO
-from app.services.settlement import settle
-
-router = APIRouter(prefix="/api/groups/{group_id}/settlement", tags=["settlement"])
+# backend/app/utils/settlement.py に追加
+from typing import Protocol
 
 
-def _compute_share_amounts(
-    payment: Payment, shares: list[PaymentShare]
+class _ShareLike(Protocol):
+    """payment_share の最小限のインタフェース(utils が ORM に依存しないため)。"""
+
+    member_id: UUID
+    # share_type は str("equal" | "amount" | "ratio")で受け取る
+    share_type: str
+    share_value: float
+
+
+def compute_share_amounts(
+    payment_amount: int,
+    shares: list[_ShareLike],
 ) -> dict[UUID, int]:
-    """1 件の payment 内での各 member の負担額を計算。
+    """1 件の payment 内での各 member の負担額を計算する純粋関数。
 
-    - equal: amount を均等割(端数は最初の member に)
+    - equal: payment_amount を均等割(端数は最初の share に寄せる)
     - amount: share_value を直接負担額として使う
-    - ratio: share_value を比率として配分(MVP は未対応、後フェーズで)
+    - ratio: share_value を比率として配分(MVP は未対応、equal にフォールバック)
     """
     if not shares:
         return {}
 
-    if all(s.share_type == ShareType.AMOUNT for s in shares):
+    if all(s.share_type == "amount" for s in shares):
         return {s.member_id: int(s.share_value) for s in shares}
 
-    if all(s.share_type == ShareType.EQUAL for s in shares):
+    if all(s.share_type == "equal" for s in shares):
         n = len(shares)
-        base = payment.amount // n
-        remainder = payment.amount - base * n
+        base = payment_amount // n
+        remainder = payment_amount - base * n
         result = {s.member_id: base for s in shares}
-        # 端数は最初の share に寄せる(規約は問わないので決定的にする)
-        first = shares[0].member_id
-        result[first] += remainder
+        result[shares[0].member_id] += remainder  # 端数を先頭に寄せて決定的に
         return result
 
     # ratio やミックスは MVP では equal にフォールバック
     n = len(shares)
-    base = payment.amount // n
+    base = payment_amount // n
     return {s.member_id: base for s in shares}
+```
+
+> **utils が ORM に依存しないこと**: `_ShareLike` Protocol 経由で `share_type` を `str` として受ける。SQLAlchemy の `ShareType` enum は service 層で `s.share_type.value` に変換してから渡す。これで utils は SQLAlchemy 非依存(framework-agnostic)を保てる。
+
+- [ ] **Step 4: `services/settlement.py` 実装(DB load + ネット収支)**
+
+```python
+# backend/app/services/settlement.py
+"""清算 service: DB から payments + shares を読み、純粋関数 utils を呼んで結果を返す。"""
+from __future__ import annotations
+
+from collections import defaultdict
+from dataclasses import dataclass
+from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models import Payment, PaymentShare
+from app.utils.settlement import Transfer, compute_share_amounts, settle
 
 
-@router.get("", response_model=SettlementResponse)
-async def get_settlement(
+@dataclass(frozen=True)
+class _ShareForCalc:
+    """utils.settlement.compute_share_amounts に渡す DTO(ORM 非依存化)。"""
+
+    member_id: UUID
+    share_type: str
+    share_value: float
+
+
+@dataclass(frozen=True)
+class SettlementResult:
+    """service の戻り値。router が DTO 変換する。"""
+
+    transfers: list[Transfer]
+    net_balances: dict[UUID, int]
+
+
+async def compute_settlement_for_group(
+    db: AsyncSession,
+    *,
     group_id: UUID,
-    member: Member = Depends(require_member),
-    db: AsyncSession = Depends(get_session),
-) -> SettlementResponse:
+) -> SettlementResult:
+    """group の未削除 payments + shares を読み、清算結果を計算する。"""
     payments = (
         await db.scalars(
             select(Payment).where(
@@ -2023,7 +2365,7 @@ async def get_settlement(
     ).all()
 
     if not payments:
-        return SettlementResponse(transfers=[], net_balances={})
+        return SettlementResult(transfers=[], net_balances={})
 
     payment_ids = [p.id for p in payments]
     shares_by_payment: dict[UUID, list[PaymentShare]] = defaultdict(list)
@@ -2037,35 +2379,77 @@ async def get_settlement(
     net: dict[UUID, int] = defaultdict(int)
     for p in payments:
         net[p.payer_id] += p.amount  # payer が一旦全額立替
-        for member_id, owed in _compute_share_amounts(p, shares_by_payment[p.id]).items():
-            net[member_id] -= owed  # 各 member が消費した分
+        share_dtos = [
+            _ShareForCalc(
+                member_id=s.member_id,
+                share_type=s.share_type.value,
+                share_value=float(s.share_value),
+            )
+            for s in shares_by_payment[p.id]
+        ]
+        for member_id, owed in compute_share_amounts(p.amount, share_dtos).items():
+            net[member_id] -= owed
 
-    # 0 だけのメンバーは除外
+    # 0 だけのメンバーは除外して送金最小化
     nonzero = {k: v for k, v in net.items() if v != 0}
     transfers = settle(nonzero)
 
+    return SettlementResult(transfers=transfers, net_balances=dict(net))
+```
+
+- [ ] **Step 5: `api/settlement.py` 実装(router: DTO 変換のみ)**
+
+```python
+# backend/app/api/settlement.py
+from __future__ import annotations
+
+from uuid import UUID
+
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.auth.deps import require_member
+from app.db.session import get_session
+from app.models import Member
+from app.schemas.settlement import SettlementResponse, TransferDTO
+from app.services import settlement as settlement_service
+
+router = APIRouter(prefix="/api/groups/{group_id}/settlement", tags=["settlement"])
+
+
+@router.get("", response_model=SettlementResponse)
+async def get_settlement(
+    group_id: UUID,
+    _member: Member = Depends(require_member),
+    db: AsyncSession = Depends(get_session),
+) -> SettlementResponse:
+    result = await settlement_service.compute_settlement_for_group(
+        db, group_id=group_id
+    )
     return SettlementResponse(
         transfers=[
             TransferDTO(from_id=t.from_id, to_id=t.to_id, amount=t.amount)
-            for t in transfers
+            for t in result.transfers
         ],
-        net_balances={str(k): v for k, v in net.items()},
+        net_balances={str(k): v for k, v in result.net_balances.items()},
     )
 ```
 
-- [ ] **Step 4: `app/main.py` に登録**
+- [ ] **Step 6: `app/main.py` に登録**
 
 ```python
-from app.routers import groups, health, members, payments, settlement
+from app.api import groups, members, payments, settlement
 ...
 app.include_router(settlement.router)
 ```
 
-- [ ] **Step 5: PASS確認 + コミット**
+- [ ] **Step 7: PASS確認 + コミット**
 
 ```bash
 uv run pytest tests/test_settlement_api.py -v
-git add backend/app/routers/settlement.py backend/app/main.py backend/tests/test_settlement_api.py
+git add backend/app/api/settlement.py backend/app/services/settlement.py \
+  backend/app/utils/settlement.py backend/app/main.py \
+  backend/tests/test_settlement_api.py
 git commit -m "feat(api): add GET /api/groups/{id}/settlement"
 ```
 
