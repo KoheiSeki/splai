@@ -147,10 +147,15 @@ async def update_payment_with_shares(
         shares = new_shares
     else:
         # shares 指定なし: 既存を同じトランザクション内で取得
-        rows = await db.scalars(
-            select(PaymentShare).where(PaymentShare.payment_id == payment.id)
-        )
+        rows = await db.scalars(select(PaymentShare).where(PaymentShare.payment_id == payment.id))
         shares = list(rows.all())
 
     await db.commit()  # 1 トランザクションをここで完了
     return payment, shares
+
+
+async def soft_delete_payment(db: AsyncSession, *, payment: Payment) -> None:
+    """payment.deleted_at に現在時刻を入れて論理削除する。"""
+
+    payment.deleted_at = datetime.now(tz=UTC)
+    await db.commit()

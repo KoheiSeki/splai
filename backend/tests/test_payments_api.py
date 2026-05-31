@@ -80,3 +80,28 @@ async def test_patch_payment_updates_amount_and_description(client: AsyncClient)
     body = res.json()
     assert body["amount"] == 5000
     assert body["description"] == "new"
+
+
+async def test_delete_payment_soft_deletes(client: AsyncClient):
+    gid, creator_mid, members = await _create_group_with_members(client, ["A"])
+    create_res = await client.post(
+        f"/api/groups/{gid}/payments",
+        headers={"X-Member-Id": creator_mid},
+        json={
+            "payerId": creator_mid,
+            "amount": 100,
+            "description": "x",
+            "shares": [{"memberId": members[0]["id"], "shareType": "equal", "shareValue": 1.0}],
+        },
+    )
+    pid = create_res.json()["id"]
+
+    res = await client.delete(
+        f"/api/groups/{gid}/payments/{pid}",
+        headers={"X-Member-Id": creator_mid},
+    )
+    assert res.status_code == 204
+
+    # 一覧から消える
+    list_res = await client.get(f"/api/groups/{gid}", headers={"X-Member-Id": creator_mid})
+    assert list_res.json()["payments"] == []

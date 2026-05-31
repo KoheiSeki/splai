@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import require_member
@@ -121,3 +121,19 @@ async def update_payment(
             for s in share_models
         ],
     )
+
+
+@router.delete("/{payment_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_payment(
+    group_id: UUID,
+    payment_id: UUID,
+    _requester: Member = Depends(require_member),
+    db: AsyncSession = Depends(get_session),
+) -> Response:
+
+    payment = await payments_service.get_payment_in_group(
+        db, payment_id=payment_id, group_id=group_id
+    )
+    await payments_service.soft_delete_payment(db, payment=payment)
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
