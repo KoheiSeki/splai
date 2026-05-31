@@ -2755,11 +2755,13 @@ zod schema は `lib/api/gen/zod/<tag>/...` に同名で置かれるので、`rea
 ### Task 15: Frontend — メンバー識別ストレージ
 
 > **配置方針**: localStorage を直接触る低レベル関数は `lib/auth/`(infra primitive)、React hook は `hooks/`(共有 hook、複数 feature が使う)。同じ責務を 2 層に分割する理由は、低レベル関数が SSR / テスト環境で React に依存せず単体テストできるため。
+>
+> **同期パターン**: hook は **`useSyncExternalStore`** を使う。これは React 19 が外部ストア(localStorage / Redux 等)との同期に推奨する API で、`useEffect` + `setState` を使った場合に出る lint 警告(`react-hooks/no-set-state-in-effect`、cascading render の原因)を回避できる。書き込み時は同一タブ内 subscriber に通知するため CustomEvent `splai:member-id-changed` を `window` に dispatch する(`storage` イベントは別タブにしか飛ばないため)。
 
 **Files:**
 
-- Create: `frontend/lib/auth/member-storage.ts`(localStorage 低レベル)
-- Create: `frontend/hooks/use-member-storage.ts`(React hook、共有層)
+- Create: `frontend/lib/auth/member-storage.ts`(localStorage 低レベル + change イベント dispatch)
+- Create: `frontend/hooks/use-member-storage.ts`(`useSyncExternalStore` で同期)
 - Create: `frontend/tests/lib/auth/member-storage.test.ts`
 
 - [ ] **Step 1: 失敗するテストを書く**
@@ -2803,15 +2805,25 @@ describe("member-storage", () => {
 npx vitest run tests/lib/auth/member-storage.test.ts
 ```
 
-- [ ] **Step 3: 実装**
+- [ ] **Step 3: `lib/auth/member-storage.ts` 実装**
 
 ```typescript
 // frontend/lib/auth/member-storage.ts
 /**
  * グループ単位のメンバー ID を localStorage で保持(設計書 §2)。
  * キー: g_<group_id>
+ *
+ * 書き込み(set / clear)時には CustomEvent `splai:member-id-changed` を
+ * window に dispatch する。同一タブ内の `useSyncExternalStore` 利用側が
+ * これを subscribe して再 render する。
+ *
+ * 別タブからの変更は標準の `storage` イベントが飛ぶので、subscriber 側で
+ * 両方を listen する必要がある(`hooks/use-member-storage.ts` 参照)。
  */
 const KEY_PREFIX = "g_";
+
+/** localStorage 変更を同一タブに通知するための CustomEvent 名。 */
+export const MEMBER_ID_CHANGED_EVENT = "splai:member-id-changed";
 
 export function getMemberId(groupId: string): string | null {
   if (typeof window === "undefined") return null;
@@ -2821,61 +2833,95 @@ export function getMemberId(groupId: string): string | null {
 export function setMemberId(groupId: string, memberId: string): void {
   if (typeof window === "undefined") return;
   localStorage.setItem(`${KEY_PREFIX}${groupId}`, memberId);
+  window.dispatchEvent(new Event(MEMBER_ID_CHANGED_EVENT));
 }
 
 export function clearMemberId(groupId: string): void {
   if (typeof window === "undefined") return;
   localStorage.removeItem(`${KEY_PREFIX}${groupId}`);
+  window.dispatchEvent(new Event(MEMBER_ID_CHANGED_EVENT));
 }
 ```
+
+- [ ] **Step 4: `hooks/use-member-storage.ts` 実装(`useSyncExternalStore`)**
 
 ```typescript
 // frontend/hooks/use-member-storage.ts
 "use client";
-import { useCallback, useEffect, useState } from "react";
+
+import { useCallback, useSyncExternalStore } from "react";
+
 import {
+  MEMBER_ID_CHANGED_EVENT,
   clearMemberId,
   getMemberId,
   setMemberId,
 } from "@/lib/auth/member-storage";
 
+/**
+ * localStorage 上の member_id を React と同期する hook。
+ *
+ * `useSyncExternalStore` を使うことで:
+ * - useEffect + setState の cascading render(React 19 の no-set-state-in-effect)を回避
+ * - 別タブからの変更も `storage` イベントで反映
+ * - 同一タブ内の変更は CustomEvent `splai:member-id-changed` で反映
+ * - SSR 中は安全に null を返す(getServerSnapshot)
+ */
 export function useMemberStorage(groupId: string) {
-  const [memberId, _setMemberId] = useState<string | null>(null);
+  // subscribe: 外部ストアの変更通知を購読する関数
+  const subscribe = useCallback((onChange: () => void) => {
+    if (typeof window === "undefined") return () => {};
+    // 別タブでの localStorage 変更
+    window.addEventListener("storage", onChange);
+    // 同一タブでの set/clear(member-storage が dispatch する)
+    window.addEventListener(MEMBER_ID_CHANGED_EVENT, onChange);
+    return () => {
+      window.removeEventListener("storage", onChange);
+      window.removeEventListener(MEMBER_ID_CHANGED_EVENT, onChange);
+    };
+  }, []);
 
-  // SSR / hydration safe な初期化
-  useEffect(() => {
-    _setMemberId(getMemberId(groupId));
-  }, [groupId]);
+  // getSnapshot: 現在値を返す純粋関数(render 中に呼ばれる、O(1))
+  const getSnapshot = useCallback(() => getMemberId(groupId), [groupId]);
+
+  // getServerSnapshot: SSR / hydration 中の fallback
+  const getServerSnapshot = useCallback(() => null, []);
+
+  const memberId = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
   const set = useCallback(
     (id: string) => {
       setMemberId(groupId, id);
-      _setMemberId(id);
+      // useSyncExternalStore が CustomEvent を検知して再 render するので、
+      // ここで個別に setState する必要はない。
     },
     [groupId],
   );
 
   const clear = useCallback(() => {
     clearMemberId(groupId);
-    _setMemberId(null);
   }, [groupId]);
 
   return { memberId, setMemberId: set, clearMemberId: clear };
 }
 ```
 
-- [ ] **Step 4: PASS確認**
+> **なぜ `useEffect` + `setState` ではないのか**: 「localStorage の値を `useState` の初期値にコピーし、変化したら setState する」というパターンは React 19 で `react-hooks/no-set-state-in-effect` の lint 警告を出す。effect 本体での setState は cascading render(render → effect → setState → 再 render)を引き起こすため。`useSyncExternalStore` は外部ストアと React state を **1 段の subscribe + getSnapshot で同期**するので、不要な再 render が発生しない。
+
+- [ ] **Step 5: PASS確認**
 
 ```bash
-npx vitest run tests/lib/auth/member-storage.test.ts
+npm test                 # tests/lib/auth/member-storage.test.ts が pass
+npm run typecheck        # エラーなし
+npm run lint             # `react-hooks/no-set-state-in-effect` 警告なし
 ```
 
-- [ ] **Step 5: コミット**
+- [ ] **Step 6: コミット**
 
 ```bash
 git add frontend/lib/auth/ frontend/hooks/use-member-storage.ts \
   frontend/tests/lib/auth/
-git commit -m "feat(frontend): add localStorage-backed member identification"
+git commit -m "feat(frontend): sync member-id storage via useSyncExternalStore"
 ```
 
 ---
