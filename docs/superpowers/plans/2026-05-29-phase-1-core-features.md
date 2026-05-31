@@ -2635,8 +2635,16 @@ export type ResponseConfig<TData = unknown> = {
 
 export type ResponseErrorConfig<TError = unknown> = AxiosError<TError>;
 
-// 全ての type param に default を持たせ、`Client` の bare 使用に備える
-export type Client<TData = unknown, TError = unknown, TVariables = unknown> = (
+/**
+ * kubb 生成 client が `request<TData, TError, TVariables>(config)` の形で
+ * 呼び出すための、**呼び出し時に型引数を取れるジェネリック関数型**。
+ *
+ * ⚠️ `type Client<T> = (...) => ...` のように型エイリアス側にジェネリクスを
+ * 書くと、型注釈時に T が固定され、呼び出し時の型引数が無視されて `unknown`
+ * になる(その結果、API ラッパの戻り値が `unknown` になる)。
+ * ジェネリクスは関数型シグネチャの内側に置くこと。
+ */
+export type Client = <TData = unknown, TError = unknown, TVariables = unknown>(
   config: RequestConfig<TVariables>,
 ) => Promise<ResponseConfig<TData>> & { error?: ResponseErrorConfig<TError> };
 
@@ -2736,16 +2744,26 @@ git commit -m "feat(frontend): generate types/zod/client from backend OpenAPI vi
 
 #### 生成された構造の使い方(参考)
 
+> **import は named export 形式**: kubb v4 は client 関数を **named export**(`export async function createGroupApiGroupsPost(...)`)として出力する。default export ではない。各 controller の `index.ts` も `export { createGroupApiGroupsPost } from './...';` で re-export しているので、tag ディレクトリ単位でまとめて import することも可能。
+
 ```typescript
-// 例: グループ作成
-import createGroupApi from "@/lib/api/gen/clients/groupsController/createGroupApiGroupsPost";
+// 例: グループ作成 — 個別ファイルから named import(関数名は OpenAPI operationId 由来で長い)
+import { createGroupApiGroupsPost } from "@/lib/api/gen/clients/groupsController/createGroupApiGroupsPost";
 import type { CreateGroupApiGroupsPostMutationRequest } from "@/lib/api/gen/types/groupsController/CreateGroupApiGroupsPost";
 
 const body: CreateGroupApiGroupsPostMutationRequest = {
   name: "渋谷飲み会",
   memberNames: ["Alice", "Bob"],
 };
-const { data } = await createGroupApi(body); // data: GroupResponse 型
+const data = await createGroupApiGroupsPost(body); // GroupResponse 型(client 関数は data だけ返す)
+```
+
+```typescript
+// もしくは tag の index 経由でまとめて import + alias で短く使う
+import {
+  createGroupApiGroupsPost as createGroup,
+  getGroupApiGroupsGroupIdGet as getGroup,
+} from "@/lib/api/gen/clients/groupsController";
 ```
 
 zod schema は `lib/api/gen/zod/<tag>/...` に同名で置かれるので、`react-hook-form` の resolver や fetch 後の追加検証で利用できる。
@@ -2887,7 +2905,11 @@ export function useMemberStorage(groupId: string) {
   // getServerSnapshot: SSR / hydration 中の fallback
   const getServerSnapshot = useCallback(() => null, []);
 
-  const memberId = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  const memberId = useSyncExternalStore(
+    subscribe,
+    getSnapshot,
+    getServerSnapshot,
+  );
 
   const set = useCallback(
     (id: string) => {
@@ -2942,7 +2964,7 @@ git commit -m "feat(frontend): sync member-id storage via useSyncExternalStore"
 ```typescript
 // frontend/features/groups/api.ts
 "use client";
-import createGroupApi from "@/lib/api/gen/clients/groupsController/createGroupApiGroupsPost";
+import { createGroupApiGroupsPost } from "@/lib/api/gen/clients/groupsController/createGroupApiGroupsPost";
 import type {
   CreateGroupApiGroupsPostMutationRequest,
   CreateGroupApiGroupsPostMutationResponse,
@@ -2952,52 +2974,78 @@ import type {
 export type CreateGroupInput = CreateGroupApiGroupsPostMutationRequest;
 export type CreateGroupResponse = CreateGroupApiGroupsPostMutationResponse;
 
+// kubb 生成 client は data 部分を直接返す(ResponseConfig.data の中身のみ取り出した値)。
+// feature 側は薄くラップして関数名を短くするだけで、戻り値の整形は不要。
 export async function createGroup(
   input: CreateGroupInput,
 ): Promise<CreateGroupResponse> {
-  const { data } = await createGroupApi(input);
-  return data;
+  return createGroupApiGroupsPost(input);
 }
 ```
 
-> **同じパターンを Task 17-20 でも適用**: `members/api.ts`, `payments/api.ts`, `settlement/api.ts` も同じく `lib/api/gen/clients/<tag>Controller/...` の関数 import + `lib/api/gen/types/<tag>Controller/...` の型エイリアスで構成する。生成ファイル名は OpenAPI の operationId 由来で長いが、feature 側で短く別名にすれば UI が触る箇所はクリーン。
+> **import は named export**: kubb v4 は client 関数を named export(`export async function createGroupApiGroupsPost`)で出力する。`import createGroupApi from '...'`(default import)はエラーになるので注意。
+>
+> **同じパターンを Task 17-20 でも適用**: `members/api.ts`, `payments/api.ts`, `settlement/api.ts` も同じく `lib/api/gen/clients/<tag>Controller/...` の **named import** + `lib/api/gen/types/<tag>Controller/...` の型エイリアスで構成する。生成ファイル名は OpenAPI の operationId 由来で長いが、feature 側で短く別名にすれば UI が触る箇所はクリーン。
 
-- [ ] **Step 2: フォームコンポーネント実装**
+- [ ] **Step 2: フォームコンポーネント実装(`useActionState`)**
+
+> **`useActionState` を採用する理由**: React 19 では「副作用のあるユーザー操作 = action」をファーストクラス概念に格上げした。`useState` + 手動の `setSubmitting`/`setError` で状態を管理するより、`useActionState` の **action 関数 = reducer** パターンに揃えたほうが:
+>
+> - `isPending` が自動で得られる(submitting state を手動管理しなくて良い)
+> - エラーと成功が同じ state(`{ error: string | null }`)に乗るので「submitting=true なのに error も出ている」のような矛盾状態が原理的に起きない
+> - action 完了時に state がアトミックに反映される(concurrent rendering でも tearing しない)
+> - 将来 Server Action 化する時に乗り換えが楽(`<form action={submit}>` にバインドするだけ)
+>
+> 入力は `members` が動的に増減する controlled inputs なので、`<form action={...}>` への直接バインド(FormData 経由)ではなく **`onSubmit` で payload を組み立てて `submit(payload)` を手動 dispatch** する形を採る。
 
 ```tsx
 // frontend/features/groups/components/create-group-form.tsx
 "use client";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useActionState, useState } from "react";
 
 import { createGroup } from "@/features/groups/api";
 import { setMemberId } from "@/lib/auth/member-storage";
 
+type FormState = { error: string | null };
+
 export function CreateGroupForm() {
   const router = useRouter();
+
+  // 入力は controlled(state は通常通り)
   const [name, setName] = useState("");
   const [members, setMembers] = useState(["", ""]);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setSubmitting(true);
-    try {
-      const memberNames = members
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
-      const res = await createGroup({ name: name.trim(), memberNames });
-      if (res.creatorMemberId) {
-        setMemberId(res.id, res.creatorMemberId);
+  // action: 前 state と payload を受け取り、新 state を返す reducer 風関数。
+  // useActionState が内部で startTransition 相当の処理をラップしており、
+  // 呼び出し側は `submit(payload)` するだけで isPending / state が連動する。
+  const [state, submit, isPending] = useActionState<
+    FormState,
+    { name: string; memberNames: string[] }
+  >(
+    async (_prev, payload) => {
+      try {
+        const res = await createGroup(payload);
+        if (res.creatorMemberId) {
+          setMemberId(res.id, res.creatorMemberId);
+        }
+        router.push(`/g/${res.id}`);
+        return { error: null };
+      } catch (e) {
+        return { error: e instanceof Error ? e.message : String(e) };
       }
-      router.push(`/g/${res.id}`);
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setSubmitting(false);
-    }
+    },
+    { error: null },
+  );
+
+  function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const memberNames = members
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    // useActionState は内部で transition を張るので、ここで `await` しない。
+    // 結果は state(state.error)と isPending 経由で UI に反映される。
+    submit({ name: name.trim(), memberNames });
   }
 
   return (
@@ -3012,10 +3060,11 @@ export function CreateGroupForm() {
           onChange={(e) => setName(e.target.value)}
           required
           maxLength={100}
+          disabled={isPending}
         />
       </label>
 
-      <fieldset className="flex flex-col gap-1">
+      <fieldset className="flex flex-col gap-1" disabled={isPending}>
         <legend className="font-jp-display text-xs tracking-widest">
           MEMBERS
         </legend>
@@ -3044,13 +3093,17 @@ export function CreateGroupForm() {
 
       <button
         type="submit"
-        disabled={submitting || !name.trim()}
+        disabled={isPending || !name.trim()}
         className="bg-ink text-paper font-display p-3 disabled:opacity-50"
       >
-        {submitting ? "..." : "CREATE"}
+        {isPending ? "..." : "CREATE"}
       </button>
 
-      {error && <p className="text-red font-mono text-xs">{error}</p>}
+      {state.error && (
+        <p role="alert" className="text-red font-mono text-xs">
+          {state.error}
+        </p>
+      )}
     </form>
   );
 }
@@ -3166,9 +3219,9 @@ export function useGroup(groupId: string, memberId: string | null) {
 ```tsx
 // frontend/features/groups/components/member-select.tsx
 "use client";
-import { useState } from "react";
+import { useActionState, useState } from "react";
 
-import { apiClient } from "@/lib/api/api-client";
+import { addMemberApiGroupsGroupIdMembersPost } from "@/lib/api/gen/clients/membersController/addMemberApiGroupsGroupIdMembersPost";
 
 type Props = {
   groupId: string;
@@ -3176,34 +3229,45 @@ type Props = {
   onSelect: (memberId: string) => void;
 };
 
+type AddState = { error: string | null };
+
 export function MemberSelect({ groupId, members, onSelect }: Props) {
   const [newName, setNewName] = useState("");
-  const [adding, setAdding] = useState(false);
 
-  async function addMember() {
-    if (!newName.trim()) return;
-    setAdding(true);
-    try {
-      // 「あなたは誰?」の段階ではまだ X-Member-Id が無い → 暫定で 1 人目の id を借りる戦略
-      // MVP では members[0] を一時的な actor として使う(設計書 §6.3 のハイブリッド)
+  const [state, addMember, isPending] = useActionState<AddState, string>(
+    async (_prev, name) => {
+      // 「あなたは誰?」の段階ではまだ X-Member-Id が無い → 暫定で 1 人目の id を借りる戦略。
+      // MVP では members[0] を一時的な actor として使う(設計書 §6.3 のハイブリッド)。
       const actor = members[0]?.id;
       if (!actor) {
-        // メンバーが 1 人もいない初期状態(memberNames=[] で作成したケース)
-        // POST /members は X-Member-Id 必須なので、Phase 5 で「初回限定の wildcard」を検討
-        alert(
-          "No initial member exists. Use the create form to add at least one.",
-        );
-        return;
+        // メンバーが 1 人もいない初期状態(memberNames=[] で作成したケース)。
+        // POST /members は X-Member-Id 必須なので、Phase 5 で「初回限定の wildcard」を検討。
+        return {
+          error:
+            "初期メンバーが居ません。Landing からメンバー名を 1 名以上入れて作成し直してください。",
+        };
       }
-      const res = await apiClient.post<{ id: string; name: string }>(
-        `/api/groups/${groupId}/members`,
-        { name: newName.trim() },
-        { headers: { "X-Member-Id": actor } },
-      );
-      onSelect(res.data.id);
-    } finally {
-      setAdding(false);
-    }
+      try {
+        const res = await addMemberApiGroupsGroupIdMembersPost(
+          groupId,
+          { name },
+          { headers: { "X-Member-Id": actor } },
+        );
+        onSelect(res.id);
+        setNewName("");
+        return { error: null };
+      } catch (e) {
+        return { error: e instanceof Error ? e.message : String(e) };
+      }
+    },
+    { error: null },
+  );
+
+  function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = newName.trim();
+    if (!trimmed) return;
+    addMember(trimmed);
   }
 
   return (
@@ -3217,6 +3281,7 @@ export function MemberSelect({ groupId, members, onSelect }: Props) {
               <button
                 onClick={() => onSelect(m.id)}
                 className="border-2 border-ink p-2 w-full text-left font-mono"
+                disabled={isPending}
               >
                 {m.name}
               </button>
@@ -3225,26 +3290,37 @@ export function MemberSelect({ groupId, members, onSelect }: Props) {
         </ul>
       )}
 
-      <div className="border-t border-rule-grey pt-3 flex flex-col gap-2">
+      <form
+        onSubmit={onSubmit}
+        className="border-t border-rule-grey pt-3 flex flex-col gap-2"
+      >
         <p className="font-mono text-xs">いない場合は新規追加:</p>
         <input
           className="border-2 border-ink p-2 bg-paper font-mono"
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
           maxLength={50}
+          disabled={isPending}
         />
         <button
-          onClick={addMember}
-          disabled={adding || !newName.trim()}
+          type="submit"
+          disabled={isPending || !newName.trim()}
           className="bg-ink text-paper font-display p-2 disabled:opacity-50"
         >
-          ADD ME
+          {isPending ? "..." : "ADD ME"}
         </button>
-      </div>
+        {state.error && (
+          <p role="alert" className="text-red font-mono text-xs">
+            {state.error}
+          </p>
+        )}
+      </form>
     </div>
   );
 }
 ```
+
+> **`addMemberApiGroupsGroupIdMembersPost` を直接使うか、wrapper を作るか**: ここでは kubb 生成 client を直接呼んでいる。Task 16 のように `features/groups/api.ts` に薄いラッパを作ってもよいが、本コンポーネントは「初期 actor 借用」という特殊な認可ロジックを内包しているため、wrapper にしても再利用性は低い。直呼び出しで OK。
 
 - [ ] **Step 3: GroupDashboard 実装(主構造、Section 級)**
 
@@ -3394,12 +3470,14 @@ export async function deletePayment(
 }
 ```
 
-- [ ] **Step 2: PaymentForm 実装**
+- [ ] **Step 2: PaymentForm 実装(`useActionState`)**
+
+> **Task 16 と同じ `useActionState` パターン**を踏襲。submit 中のペンディング状態 + エラーメッセージを 1 つの reducer 関数に集約する。
 
 ```tsx
 // frontend/features/payments/components/payment-form.tsx
 "use client";
-import { useState } from "react";
+import { useActionState, useState } from "react";
 
 import { createPayment } from "@/features/payments/api";
 
@@ -3412,34 +3490,49 @@ type Props = {
   onCreated: () => void;
 };
 
+type FormState = { error: string | null };
+
+type Payload = {
+  payerId: string;
+  amount: number;
+  description: string;
+};
+
 export function PaymentForm({ groupId, memberId, members, onCreated }: Props) {
   const [payerId, setPayerId] = useState(memberId);
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
-  const [submitting, setSubmitting] = useState(false);
 
-  async function onSubmit(e: React.FormEvent) {
+  const [state, submit, isPending] = useActionState<FormState, Payload>(
+    async (_prev, payload) => {
+      try {
+        await createPayment(groupId, memberId, {
+          payerId: payload.payerId,
+          amount: payload.amount,
+          description: payload.description,
+          shares: members.map((m) => ({
+            memberId: m.id,
+            shareType: "equal",
+            shareValue: 1.0,
+          })),
+        });
+        // 成功: 入力欄をリセットして親に通知
+        setAmount("");
+        setDescription("");
+        onCreated();
+        return { error: null };
+      } catch (e) {
+        return { error: e instanceof Error ? e.message : String(e) };
+      }
+    },
+    { error: null },
+  );
+
+  function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     const amt = Number(amount);
     if (!Number.isInteger(amt) || amt <= 0) return;
-    setSubmitting(true);
-    try {
-      await createPayment(groupId, memberId, {
-        payerId,
-        amount: amt,
-        description,
-        shares: members.map((m) => ({
-          memberId: m.id,
-          shareType: "equal",
-          shareValue: 1.0,
-        })),
-      });
-      setAmount("");
-      setDescription("");
-      onCreated();
-    } finally {
-      setSubmitting(false);
-    }
+    submit({ payerId, amount: amt, description });
   }
 
   return (
@@ -3449,43 +3542,45 @@ export function PaymentForm({ groupId, memberId, members, onCreated }: Props) {
     >
       <h3 className="font-jp-display text-sm tracking-widest">PAYMENT</h3>
 
-      <label className="flex flex-col gap-1">
-        <span className="font-mono text-xs">PAYER</span>
-        <select
-          value={payerId}
-          onChange={(e) => setPayerId(e.target.value)}
-          className="border-2 border-ink p-1 bg-paper font-mono"
-        >
-          {members.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.name}
-            </option>
-          ))}
-        </select>
-      </label>
+      <fieldset className="contents" disabled={isPending}>
+        <label className="flex flex-col gap-1">
+          <span className="font-mono text-xs">PAYER</span>
+          <select
+            value={payerId}
+            onChange={(e) => setPayerId(e.target.value)}
+            className="border-2 border-ink p-1 bg-paper font-mono"
+          >
+            {members.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+          </select>
+        </label>
 
-      <label className="flex flex-col gap-1">
-        <span className="font-mono text-xs">AMOUNT (JPY)</span>
-        <input
-          type="number"
-          inputMode="numeric"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          className="border-2 border-ink p-1 bg-paper font-mono"
-          required
-          min={1}
-        />
-      </label>
+        <label className="flex flex-col gap-1">
+          <span className="font-mono text-xs">AMOUNT (JPY)</span>
+          <input
+            type="number"
+            inputMode="numeric"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            className="border-2 border-ink p-1 bg-paper font-mono"
+            required
+            min={1}
+          />
+        </label>
 
-      <label className="flex flex-col gap-1">
-        <span className="font-mono text-xs">DESCRIPTION</span>
-        <input
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          className="border-2 border-ink p-1 bg-paper font-mono"
-          maxLength={500}
-        />
-      </label>
+        <label className="flex flex-col gap-1">
+          <span className="font-mono text-xs">DESCRIPTION</span>
+          <input
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            className="border-2 border-ink p-1 bg-paper font-mono"
+            maxLength={500}
+          />
+        </label>
+      </fieldset>
 
       <p className="font-mono text-xs text-rule-grey">
         Phase 1 は均等割固定。比率/金額指定は Phase 1 終盤で追加。
@@ -3493,11 +3588,17 @@ export function PaymentForm({ groupId, memberId, members, onCreated }: Props) {
 
       <button
         type="submit"
-        disabled={submitting}
+        disabled={isPending}
         className="bg-ink text-paper font-display p-2 disabled:opacity-50"
       >
-        {submitting ? "..." : "ADD"}
+        {isPending ? "..." : "ADD"}
       </button>
+
+      {state.error && (
+        <p role="alert" className="text-red font-mono text-xs">
+          {state.error}
+        </p>
+      )}
     </form>
   );
 }
@@ -3538,10 +3639,14 @@ git commit -m "feat(frontend): add payment input form (equal split MVP)"
 
 - [ ] **Step 1: PaymentList 実装**
 
+> **per-item 操作で `useActionState` を使わない理由**: Task 16/18 のフォームと違い、削除は **リストの各アイテム個別の操作**で「どの id が処理中か」の UI 表示が要る。`useActionState` の `isPending` は単一 boolean なので「どの行が pending か」を表現できず、別途 state が必要になる。シンプルに `useState<string | null>` で deletingId を持つ方が直接的。
+>
+> **代替案**: React 19 では各 `<form action={...}>` を独立に走らせると別々に pending 管理できるので、行単位で `<form>` を作って `<button formAction={dispatch}>` でも書ける。ただし confirm ダイアログを挟む現状の UX には不要な抽象化なので、本 plan では採用しない。
+
 ```tsx
 // frontend/features/payments/components/payment-list.tsx
 "use client";
-import { useState } from "react";
+import { useState, useTransition } from "react";
 
 import { deletePayment } from "@/features/payments/api";
 
@@ -3572,17 +3677,24 @@ export function PaymentList({
 }: Props) {
   const memberName = (id: string) =>
     members.find((m) => m.id === id)?.name ?? "?";
-  const [deleting, setDeleting] = useState<string | null>(null);
 
-  async function onDelete(paymentId: string) {
+  // 「どの id が削除処理中か」を追跡(per-item pending 表示のため)。
+  // useTransition で startTransition を併用することで concurrent rendering 安全に
+  // setDeleting と onChange の更新をまとめる。
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  function onDelete(paymentId: string) {
     if (!confirm("この支払いを削除しますか?")) return;
-    setDeleting(paymentId);
-    try {
-      await deletePayment(paymentId, groupId, memberId);
-      onChange();
-    } finally {
-      setDeleting(null);
-    }
+    setDeletingId(paymentId);
+    startTransition(async () => {
+      try {
+        await deletePayment(paymentId, groupId, memberId);
+        onChange();
+      } finally {
+        setDeletingId(null);
+      }
+    });
   }
 
   if (payments.length === 0) {
@@ -3611,10 +3723,11 @@ export function PaymentList({
             </span>
             <button
               onClick={() => onDelete(p.id)}
-              disabled={deleting === p.id}
+              // 別行の削除中は他の行も無効化(連続クリック誤操作防止)
+              disabled={isPending}
               className="font-mono text-xs underline text-rule-grey"
             >
-              {deleting === p.id ? "..." : "delete"}
+              {deletingId === p.id ? "..." : "delete"}
             </button>
           </div>
         </li>

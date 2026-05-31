@@ -40,7 +40,15 @@ export type ResponseConfig<TData = unknown> = {
 
 export type ResponseErrorConfig<TError = unknown> = AxiosError<TError>;
 
-export type Client<TData = unknown, TError = unknown, TVariables = unknown> = (
+/**
+ * kubb 生成 client が `request<TData, TError, TVariables>(config)` の形で
+ * 呼び出すための、**呼び出し時に型引数を取れるジェネリック関数型**。
+ *
+ * ⚠️ `type Client<T> = (...) => ...` のように型エイリアス側にジェネリクスを
+ * 書くと、型注釈時に T が固定され、呼び出し時の型引数が無視されて `unknown`
+ * になる。ジェネリクスは関数型シグネチャの内側に置くこと。
+ */
+export type Client = <TData = unknown, TError = unknown, TVariables = unknown>(
   config: RequestConfig<TVariables>,
 ) => Promise<ResponseConfig<TData>> & { error?: ResponseErrorConfig<TError> };
 
