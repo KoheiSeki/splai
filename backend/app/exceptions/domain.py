@@ -32,3 +32,9 @@ class AIProviderError(SplaiError):
     status_code: int = 502
     type_slug: str = "ai-provider-error"
     title: str = "AI Provider Error"
+
+
+class InvalidPaymentShares(SplaiError):
+    status_code: int = 400
+    type_slug: str = "invalid-payment-shares"
+    title: str = "Invalid Payment Shares"
