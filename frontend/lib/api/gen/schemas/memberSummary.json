@@ -1,0 +1,12 @@
+{
+  "properties": {
+    "id": { "type": "string", "format": "uuid", "title": "Id" },
+    "name": { "type": "string", "title": "Name" },
+    "createdAt": { "type": "string", "format": "date-time", "title": "Createdat" }
+  },
+  "type": "object",
+  "required": ["id", "name", "createdAt"],
+  "title": "MemberSummary",
+  "description": "メンバー情報",
+  "x-readme-ref-name": "MemberSummary"
+}

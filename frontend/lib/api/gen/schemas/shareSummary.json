@@ -1,0 +1,12 @@
+{
+  "properties": {
+    "memberId": { "type": "string", "format": "uuid", "title": "Memberid" },
+    "shareType": { "type": "string", "enum": ["equal", "ratio", "amount"], "title": "Sharetype" },
+    "shareValue": { "type": "number", "title": "Sharevalue" }
+  },
+  "type": "object",
+  "required": ["memberId", "shareType", "shareValue"],
+  "title": "ShareSummary",
+  "description": "支払い共有情報",
+  "x-readme-ref-name": "ShareSummary"
+}

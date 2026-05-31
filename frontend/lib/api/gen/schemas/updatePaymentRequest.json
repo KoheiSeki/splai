@@ -1,0 +1,49 @@
+{
+  "properties": {
+    "payerId": {
+      "anyOf": [{ "type": "string", "format": "uuid" }, { "type": "null" }],
+      "title": "Payerid"
+    },
+    "amount": {
+      "anyOf": [{ "type": "integer", "exclusiveMinimum": 0 }, { "type": "null" }],
+      "title": "Amount"
+    },
+    "description": {
+      "anyOf": [{ "type": "string", "maxLength": 500 }, { "type": "null" }],
+      "title": "Description"
+    },
+    "paidAt": {
+      "anyOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }],
+      "title": "Paidat"
+    },
+    "shares": {
+      "anyOf": [
+        {
+          "items": {
+            "properties": {
+              "memberId": { "type": "string", "format": "uuid", "title": "Memberid" },
+              "shareType": {
+                "type": "string",
+                "enum": ["equal", "ratio", "amount"],
+                "title": "Sharetype"
+              },
+              "shareValue": { "type": "number", "exclusiveMinimum": 0, "title": "Sharevalue" }
+            },
+            "type": "object",
+            "required": ["memberId", "shareType", "shareValue"],
+            "title": "ShareInput",
+            "description": "支払い共有入力",
+            "x-readme-ref-name": "ShareInput"
+          },
+          "type": "array"
+        },
+        { "type": "null" }
+      ],
+      "title": "Shares"
+    }
+  },
+  "type": "object",
+  "title": "UpdatePaymentRequest",
+  "description": "支払い更新リクエスト",
+  "x-readme-ref-name": "UpdatePaymentRequest"
+}

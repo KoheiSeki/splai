@@ -1,0 +1,8 @@
+{
+  "properties": { "name": { "type": "string", "maxLength": 50, "minLength": 1, "title": "Name" } },
+  "type": "object",
+  "required": ["name"],
+  "title": "CreateMemberRequest",
+  "description": "メンバー作成リクエスト",
+  "x-readme-ref-name": "CreateMemberRequest"
+}

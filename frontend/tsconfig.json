@@ -23,7 +23,10 @@
     },
     "noUncheckedIndexedAccess": true, // arr[0] が T | undefined になる
     "noImplicitReturns": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    // kubb の生成コードは ESM 慣例で `import './foo.ts'` のように拡張子付きで
+    // 出力される。Next.js は noEmit のため安全に許可できる。
+    "allowImportingTsExtensions": true
   },
   "include": [
     "next-env.d.ts",
