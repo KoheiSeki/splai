@@ -4112,21 +4112,21 @@ git commit -m "docs: mark Phase 1 as complete"
 git push origin develop
 ```
 
-- [ ] **Step 2: DoD チェック**
+- [x] **Step 2: DoD チェック**
 
-- [ ] グループ作成(`POST /api/groups`)— Task 6
-- [ ] メンバー登録(作成時 + 後追加)— Task 6, 8
-- [ ] 手動支払い登録(`POST /api/groups/{id}/payments`)— Task 9
-- [ ] 支払い編集(`PATCH /api/groups/{group_id}/payments/{id}`)— Task 10
-- [ ] 支払い論理削除(`DELETE /api/groups/{group_id}/payments/{id}`)— Task 11
-- [ ] 支払い一覧表示(GET /api/groups/{id} の payments フィールド経由)— Task 7, 19
-- [ ] 清算結果計算(貪欲法)と表示 — Task 3, 12, 20
-- [ ] X-Member-Id 認可ミドルウェア — Task 4
-- [ ] localStorage によるメンバー識別 — Task 15
-- [ ] グループURL(`/g/{uuid}`)経由でのアクセス — Task 17
-- [ ] Zod / Pydantic スキーマと OpenAPI → Zod 自動生成パイプライン — Task 5, 13, 14
-- [ ] Backend / Frontend CI が緑のまま維持
-- [ ] 本番 Vercel + Fly.io で E2E が成功
+- [x] グループ作成(`POST /api/groups`)— Task 6 / `app/api/groups.py:create_group`
+- [x] メンバー登録(作成時 + 後追加)— Task 6, 8 / `services/groups.py` + `api/members.py`
+- [x] 手動支払い登録(`POST /api/groups/{id}/payments`)— Task 9 / `api/payments.py:create_payment`
+- [x] 支払い編集(`PATCH /api/groups/{group_id}/payments/{id}`)— Task 10 / `api/payments.py:update_payment`
+- [x] 支払い論理削除(`DELETE /api/groups/{group_id}/payments/{id}`)— Task 11 / `api/payments.py:delete_payment`
+- [x] 支払い一覧表示(GET /api/groups/{id} の payments フィールド経由)— Task 7, 19 / `payment-list.tsx`
+- [x] 清算結果計算(貪欲法)と表示 — Task 3, 12, 20 / `utils/settlement.py:settle` + `settlement-view.tsx`
+- [x] X-Member-Id 認可ミドルウェア — Task 4 / `auth/deps.py:require_member`
+- [x] localStorage によるメンバー識別 — Task 15 / `lib/auth/member-storage.ts` + `hooks/use-member-storage.ts`(`useSyncExternalStore`)
+- [x] グループURL(`/g/{uuid}`)経由でのアクセス — Task 17 / `app/g/[uuid]/page.tsx` + `group-dashboard.tsx`
+- [x] Zod / Pydantic スキーマと OpenAPI → Zod 自動生成パイプライン — Task 5, 13, 14 / `app/schemas/` + `kubb.config.ts` + `lib/api/gen/`
+- [x] Backend / Frontend CI が緑のまま維持(ephemeral Postgres + alembic で integration test 含めて pass)
+- [x] 本番 Vercel + Fly.io で E2E が成功(release PR #4 / Phase 1 マージ済 + Fly.io へ deploy 完了)
 
 - [ ] **Step 3: Phase 2 の詳細計画作成を開始**
 
