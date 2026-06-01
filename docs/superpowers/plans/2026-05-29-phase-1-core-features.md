@@ -4,9 +4,9 @@
 
 **Goal:** ログイン無しでグループを作成し、メンバーを登録し、手動で支払いを記録し、清算結果(貪欲法による最少送金リスト)を表示できる、SPLAI MVP のコアフローを完成させる。
 
-**Architecture:** Phase 0 で構築した FastAPI/Next.js 基盤の上に、4 つの SQLAlchemy モデル(groups/members/payments/payment_shares)、X-Member-Id を `Depends()` で検証する認可、清算用の純粋関数(設計書 付録 A の貪欲法)、6 本の REST エンドポイントを実装する。Frontend は OpenAPI から Zod スキーマを自動生成して型安全な fetcher を組み、`/`(landing)と `/g/[uuid]`(group dashboard)の 2 画面で全ユースケースをカバー。
+**Architecture:** Phase 0 で構築した FastAPI/Next.js 基盤の上に、4 つの SQLAlchemy モデル(groups/members/payments/payment_shares)、X-Member-Id を `Depends()` で検証する認可、清算用の純粋関数(設計書 付録 A の貪欲法)、6 本の REST エンドポイントを実装する。Frontend は OpenAPI から **kubb で TypeScript 型 + Zod スキーマ + axios クライアント関数を自動生成**し、`/`(landing)と `/g/[uuid]`(group dashboard)の 2 画面で全ユースケースをカバー。
 
-**Tech Stack:** SQLAlchemy 2.x + Alembic、Pydantic 2 (CamelModel)、FastAPI Depends 認可、Next.js 16 App Router、`openapi-zod-client`、react-hook-form + Zod resolver、localStorage(group-scoped key)。
+**Tech Stack:** SQLAlchemy 2.x + Alembic、Pydantic 2 (CamelModel)、FastAPI Depends 認可、Next.js 16 App Router、**kubb**(`@kubb/cli` + `plugin-{oas,ts,zod,client}`)、zod v4、react-hook-form + Zod resolver、localStorage(group-scoped key)。
 
 ---
 
@@ -73,33 +73,88 @@ splai/
 │       ├── test_payments_api.py                ← Task 9, 10, 11
 │       └── test_settlement_api.py              ← Task 12
 ├── frontend/
-│   ├── lib/
-│   │   ├── api/
-│   │   │   ├── client.ts                       ← 既存 api-client.ts を改名/活用
-│   │   │   └── schemas.gen.ts                  ← Task 14(自動生成、追跡対象)
-│   │   ├── auth/
-│   │   │   └── member-storage.ts               ← Task 15
-│   │   └── hooks/
-│   │       ├── use-group.ts                    ← Task 17
-│   │       └── use-member-storage.ts           ← Task 15
-│   ├── app/
-│   │   ├── page.tsx                            ← Modify(landing 化、Task 16)
+│   ├── app/                                    ← Next.js routing 専用(page / layout のみ)
+│   │   ├── page.tsx                            ← Modify(Landing、薄い shell。Task 16)
 │   │   └── g/
 │   │       └── [uuid]/
-│   │           ├── page.tsx                    ← Task 17
-│   │           └── components/                  ← Tasks 18-20
-│   │               ├── member-select.tsx
-│   │               ├── payment-form.tsx
-│   │               ├── payment-list.tsx
-│   │               └── settlement-view.tsx
-│   ├── package.json                            ← Modify(codegen script 追加)
-│   └── tests/
-│       ├── lib/auth/member-storage.test.ts     ← Task 15
-│       └── components/payment-form.test.tsx    ← Task 18 (smoke)
+│   │           └── page.tsx                    ← Task 17(GroupDashboard を呼ぶだけ)
+│   ├── features/                               ← ★ ドメイン単位の機能スライス
+│   │   ├── groups/
+│   │   │   ├── components/                     ← 複数 file 前提でディレクトリ
+│   │   │   │   ├── create-group-form.tsx       ← Task 16
+│   │   │   │   ├── group-dashboard.tsx         ← Task 17(/g/[uuid] の主要構造)
+│   │   │   │   └── member-select.tsx           ← Task 17
+│   │   │   ├── api.ts                          ← createGroup, getGroup, addMember
+│   │   │   ├── types.ts                        ← group / member 型(必要時)
+│   │   │   └── use-group.ts                    ← Task 17(flat 配置、1-2 hook なら hooks/ 不要)
+│   │   ├── payments/
+│   │   │   ├── components/
+│   │   │   │   ├── payment-form.tsx            ← Task 18
+│   │   │   │   └── payment-list.tsx            ← Task 19
+│   │   │   ├── api.ts                          ← createPayment, deletePayment
+│   │   │   └── types.ts
+│   │   └── settlement/
+│   │       ├── components/
+│   │       │   └── settlement-view.tsx         ← Task 20
+│   │       ├── api.ts                          ← getSettlement
+│   │       └── types.ts
+│   ├── components/                             ← 共有 UI(Phase 1 では空、Phase 2 で primitives)
+│   ├── hooks/                                  ← ★ 共有 hooks(複数 feature 横断)
+│   │   └── use-member-storage.ts               ← Task 15
+│   ├── utils/                                  ← ★ 純粋関数 helper(format, calc 等)
+│   │   └── format.ts                           ← (必要時、formatYen / formatDate)
+│   ├── lib/                                    ← 副作用 / Web API 依存の infra primitives
+│   │   ├── api/
+│   │   │   ├── api-client.ts                   ← 既存(axios + X-Request-Id interceptor)
+│   │   │   ├── kubb-client.ts                  ← Task 14(kubb 生成 client が呼ぶ HTTP 実行関数)
+│   │   │   └── gen/                            ← Task 14(kubb 自動生成、追跡対象)
+│   │   │       ├── types/                      ←   tag 別 TypeScript 型
+│   │   │       ├── zod/                        ←   tag 別 Zod schema
+│   │   │       └── clients/                    ←   tag 別 client 関数(createGroup 等)
+│   │   ├── auth/
+│   │   │   └── member-storage.ts               ← Task 15(localStorage 低レベル)
+│   │   ├── env.ts                              ← 既存
+│   │   └── request-id.ts                       ← 既存
+│   ├── kubb.config.ts                          ← Task 14(codegen 設定)
+│   ├── package.json                            ← Modify(kubb deps + codegen script)
+│   ├── tsconfig.json                           ← Modify(allowImportingTsExtensions)
+│   ├── eslint.config.mjs                       ← Modify(lib/api/gen/** を ignore)
+│   └── tests/                                  ← ソース構造を mirror
+│       ├── features/
+│       │   └── payments/components/payment-form.test.tsx  ← Task 18(smoke)
+│       ├── hooks/
+│       │   └── use-member-storage.test.ts      ← Task 15
+│       └── lib/
+│           └── auth/member-storage.test.ts     ← Task 15(低レベル side)
 └── docs/
     └── superpowers/plans/
         └── 2026-05-29-phase-1-core-features.md  ← 本ファイル
 ```
+
+> **ディレクトリの役割分担**(規約 §6.5 と整合):
+>
+> | 階層            | 役割                                                                           | 例                                         |
+> | --------------- | ------------------------------------------------------------------------------ | ------------------------------------------ |
+> | `app/`          | Next.js routing(page / layout のみ。中身は features を呼ぶ薄い shell)          | `app/g/[uuid]/page.tsx`                    |
+> | `features/<X>/` | **ドメイン単位の自己完結スライス**(components / hooks / api / types)           | `features/payments/`                       |
+> | `components/`   | **機能横断の共有 UI primitives**(Phase 1 では空、Phase 2 で `Button` 等を導入) | (将来)                                     |
+> | `hooks/`        | **複数 feature が使う共有 hooks**                                              | `use-member-storage.ts`                    |
+> | `utils/`        | **純粋関数 helper**(同じ入力 → 同じ出力、外部依存なし)                         | `format.ts`(formatYen, formatDate)         |
+> | `lib/`          | **副作用 / Web API 依存の infrastructure primitives**                          | axios インスタンス、localStorage、env 検証 |
+>
+> **共有 vs 機能特化の判定**:「このファイルが消えると影響する feature 数」が 1 個なら `features/<X>/`、2 個以上なら共有層(`hooks/` / `components/` / `utils/` / `lib/`)へ。
+>
+> **feature 内の sub-directory 化ルール(昇格)**:`features/<X>/` 内では「**単一ファイルは flat、複数になったら sub-dir に昇格**」を一貫して適用:
+>
+> | 種別              | 1-2 file                     | 3+ file                      |
+> | ----------------- | ---------------------------- | ---------------------------- |
+> | hooks(`use-*.ts`) | flat(feature 直下に置く)     | `features/<X>/hooks/` に昇格 |
+> | api               | `api.ts`(flat)               | `features/<X>/api/` に昇格   |
+> | types             | `types.ts`(flat)             | `features/<X>/types/` に昇格 |
+> | utils(機能特化)   | `utils.ts`(flat)             | `features/<X>/utils/` に昇格 |
+> | components        | 常に `components/`(複数前提) | (常にディレクトリ)           |
+>
+> Phase 1 の各 feature は hooks 1 個前後 → **`features/<X>/use-xxx.ts` の flat 配置**を採用。
 
 ---
 
@@ -108,6 +163,7 @@ splai/
 ### Task 1: SQLAlchemy モデル(groups / members / payments / payment_shares)
 
 **Files:**
+
 - Create: `backend/app/models/__init__.py`
 - Create: `backend/app/models/group.py`
 - Create: `backend/app/models/member.py`
@@ -135,7 +191,9 @@ def test_group_instantiation():
     g = Group(name="渋谷飲み会", event_date=date(2026, 6, 1))
     assert g.name == "渋谷飲み会"
     assert g.event_date == date(2026, 6, 1)
-    assert g.currency == "JPY"  # default
+    # currency / created_at / id は DB flush 時に SQLAlchemy / Postgres が default を
+    # 適用する(Python 直後は None)。実値の検証は API integration test
+    # (test_groups_api)で end-to-end に行う。
 
 
 def test_member_requires_group_id():
@@ -177,6 +235,7 @@ def test_payment_share_types():
 cd backend
 uv run pytest tests/test_models.py -v
 ```
+
 期待出力: `ModuleNotFoundError: No module named 'app.models'`
 
 - [ ] **Step 3: `app/models/__init__.py` を作成**
@@ -378,6 +437,7 @@ class PaymentShare(Base):
 ```bash
 uv run pytest tests/test_models.py -v
 ```
+
 期待出力: 4 passed.
 
 - [ ] **Step 9: コミット**
@@ -392,6 +452,7 @@ git commit -m "feat(backend): add SQLAlchemy models for groups, members, payment
 ### Task 2: Alembic マイグレーション(コアテーブル作成)
 
 **Files:**
+
 - Create: `backend/alembic/versions/<rev>_create_core_tables.py`(autogenerate)
 
 - [ ] **Step 1: alembic env.py が models をロードしているか確認**
@@ -399,6 +460,7 @@ git commit -m "feat(backend): add SQLAlchemy models for groups, members, payment
 ```bash
 grep -n "from app.models" backend/alembic/env.py
 ```
+
 出ていなければ env.py に `from app import models  # noqa: F401` を追加し、`Base.metadata` が models を認識するようにする。
 
 ```python
@@ -413,7 +475,9 @@ from app.db.base import Base
 cd backend
 uv run alembic revision --autogenerate -m "create core tables"
 ```
+
 生成された `backend/alembic/versions/<rev>_create_core_tables.py` を開いて確認:
+
 - `groups`, `members`, `payments`, `payment_shares` の `op.create_table(...)` が含まれること
 - ENUM 型(`payment_source`, `share_type`)も生成されていること
 
@@ -433,6 +497,7 @@ op.create_index("ix_payment_shares_payment_id", "payment_shares", ["payment_id"]
 ```bash
 uv run alembic upgrade head
 ```
+
 期待出力: `INFO  [alembic.runtime.migration] Running upgrade ... -> <rev>, create core tables`
 
 - [ ] **Step 5: Supabase Dashboard → Table Editor で 4 テーブルが存在することを目視確認**
@@ -451,9 +516,12 @@ git commit -m "feat(db): create core tables (groups, members, payments, payment_
 ### Task 3: 清算アルゴリズム(貪欲法、純粋関数)
 
 **Files:**
-- Create: `backend/app/services/__init__.py`
-- Create: `backend/app/services/settlement.py`
+
+- Create: `backend/app/utils/__init__.py`
+- Create: `backend/app/utils/settlement.py`
 - Create: `backend/tests/test_settlement.py`
+
+> **配置先 = `app/utils/`**: 清算アルゴリズムは I/O を持たない純粋関数なので `services/` ではなく `utils/` に置く。判断基準は `docs/conventions.md` §5.10、層モデルは `docs/superpowers/specs/design.md` §3「Backend 内部レイヤ構造」を参照。
 
 - [ ] **Step 1: 失敗するテストを書く**
 
@@ -461,7 +529,7 @@ git commit -m "feat(db): create core tables (groups, members, payments, payment_
 # backend/tests/test_settlement.py
 from uuid import uuid4
 
-from app.services.settlement import Transfer, settle
+from app.utils.settlement import Transfer, settle
 
 
 def test_empty_returns_no_transfers():
@@ -506,18 +574,19 @@ def test_returns_immutable_result():
 ```bash
 uv run pytest tests/test_settlement.py -v
 ```
-期待出力: `ModuleNotFoundError: No module named 'app.services'`
 
-- [ ] **Step 3: `app/services/__init__.py` を作成**
+期待出力: `ModuleNotFoundError: No module named 'app.utils'`
+
+- [ ] **Step 3: `app/utils/__init__.py` を作成**
 
 ```python
-# backend/app/services/__init__.py
+# backend/app/utils/__init__.py
 ```
 
-- [ ] **Step 4: `app/services/settlement.py` を実装**
+- [ ] **Step 4: `app/utils/settlement.py` を実装**
 
 ```python
-# backend/app/services/settlement.py
+# backend/app/utils/settlement.py
 """清算アルゴリズム(設計書 付録 A の貪欲法)。
 
 純粋関数:net_balances(各メンバーのネット収支)→ 最少送金回数の Transfer リスト。
@@ -586,6 +655,7 @@ def settle(net_balances: dict[UUID, int]) -> list[Transfer]:
 ```bash
 uv run pytest tests/test_settlement.py -v
 ```
+
 期待出力: 5 passed.
 
 - [ ] **Step 6: コミット**
@@ -600,6 +670,7 @@ git commit -m "feat(backend): add settlement greedy algorithm (pure function)"
 ### Task 4: X-Member-Id 認可(`Depends()` ベース)
 
 **Files:**
+
 - Create: `backend/app/auth/__init__.py`
 - Create: `backend/app/auth/deps.py`
 - Modify: `backend/app/exceptions/domain.py`(MemberMismatch は既存、念のため確認)
@@ -689,6 +760,7 @@ async def test_require_member_raises_when_member_in_different_group():
 ```bash
 uv run pytest tests/test_auth_deps.py -v
 ```
+
 期待出力: `ModuleNotFoundError: No module named 'app.auth'`
 
 - [ ] **Step 3: `app/auth/__init__.py` と `app/auth/deps.py` を実装**
@@ -752,6 +824,7 @@ async def require_member(
 ```bash
 uv run pytest tests/test_auth_deps.py -v
 ```
+
 期待出力: 2 passed.
 
 - [ ] **Step 5: コミット**
@@ -766,6 +839,7 @@ git commit -m "feat(auth): add require_member Depends for X-Member-Id validation
 ### Task 5: Pydantic スキーマ(Request / Response)
 
 **Files:**
+
 - Create: `backend/app/schemas/group.py`
 - Create: `backend/app/schemas/member.py`
 - Create: `backend/app/schemas/payment.py`
@@ -832,6 +906,7 @@ def test_create_payment_request_share_input():
 ```bash
 uv run pytest tests/test_schemas_camel.py -v
 ```
+
 期待出力: ImportError(モジュール未作成)
 
 - [ ] **Step 3: `app/schemas/group.py` 実装**
@@ -846,6 +921,7 @@ from uuid import UUID
 from pydantic import Field
 
 from app.schemas.base import CamelModel
+from app.schemas.payment import PaymentSummary
 
 
 class CreateGroupRequest(CamelModel):
@@ -867,14 +943,11 @@ class GroupResponse(CamelModel):
     currency: str
     creator_member_id: UUID | None = None
     members: list[MemberSummary] = Field(default_factory=list)
-    payments: list["PaymentSummary"] = Field(default_factory=list)
-
-
-# 末尾で循環 import を解決
-from app.schemas.payment import PaymentSummary  # noqa: E402
-
-GroupResponse.model_rebuild()
+    payments: list[PaymentSummary] = Field(default_factory=list)
 ```
+
+> **Note**: `payment.py` は `group.py` を参照しないため循環 import は発生せず、`PaymentSummary` は通常通り上部 import で OK。
+> もし将来 `payment.py` 側から `GroupResponse` を参照する必要が出た場合は、片方を末尾 import + `model_rebuild()` で遅延解決する pattern が必要になる。
 
 - [ ] **Step 4: `app/schemas/member.py` 実装**
 
@@ -981,6 +1054,7 @@ class SettlementResponse(CamelModel):
 ```bash
 uv run pytest tests/test_schemas_camel.py -v
 ```
+
 期待出力: 3 passed.
 
 - [ ] **Step 8: コミット**
@@ -995,76 +1069,191 @@ git commit -m "feat(backend): add Pydantic schemas for groups/members/payments/s
 ### Task 6: API: `POST /api/groups`(グループ作成)
 
 **Files:**
-- Create: `backend/app/routers/groups.py`
-- Create: `backend/tests/test_groups_api.py`
+
+- Create: `backend/app/api/__init__.py`
+- Create: `backend/app/api/groups.py`(router)
+- Create: `backend/app/services/groups.py`(service: DB + ビジネスルール)
+- Create: `backend/tests/test_groups_api.py`(integration test)
 - Modify: `backend/app/main.py`(router 登録)
+
+> **レイヤ分離**: Task 6〜12 はすべて以下のパターンで実装する。
+>
+> - **router** (`app/api/`): HTTP I/O・認可・DTO 変換のみ。`db.add()` などを書かない。
+> - **service** (`app/services/`): DB 読み書き、トランザクション境界、ビジネスルール。ORM model を返す(Pydantic schema には依存しない)。
+> - **utils** (`app/utils/`): 純粋関数のみ。
+>
+> 詳細は `docs/conventions.md` §5.10、`docs/superpowers/specs/design.md` §3 参照。
+
+- [ ] **Step 0: `tests/conftest.py` に共通 `client` fixture を追加**(初回 API テスト時のみ)
+
+API integration test は以下の fixture を共通利用する。`fastapi.testclient.TestClient` ではなく `httpx.AsyncClient` + `ASGITransport` を使う理由は、`asyncpg` と TestClient の event loop 競合(`Future attached to a different loop`)を回避するため。
+
+```python
+# backend/tests/conftest.py に追加(top-level の env setup の後)
+import pytest
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
+
+from app.config import get_settings
+from app.db.session import get_session
+from app.main import app
+
+
+@pytest.fixture
+async def client():
+    """API integration test 用の AsyncClient(各テスト fresh engine + NullPool)。
+
+    - TestClient を使った場合の event loop 競合を回避
+    - NullPool により test 間で connection を共有しない
+    - `.env.local` の DATABASE_URL に接続する(conftest top-level で設定済み)
+    - test ごとにユニークな group 名を使えば dev DB のデータ汚染は問題にならない
+    """
+    settings = get_settings()
+    engine = create_async_engine(settings.database_url, poolclass=NullPool)
+    SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def _override_get_session():
+        async with SessionLocal() as session:
+            yield session
+
+    app.dependency_overrides[get_session] = _override_get_session
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as ac:
+            yield ac
+    finally:
+        app.dependency_overrides.clear()
+        await engine.dispose()
+```
+
+加えて、`conftest.py` の top-level で `.env.local` の `DATABASE_URL` を test 用 `os.environ` にセットする必要がある(engine が module import 時に作られるため)。Phase 0 で書いた conftest を以下のように更新:
+
+```python
+# conftest.py 冒頭(import os の直後)
+import os
+from pathlib import Path
+from dotenv import dotenv_values
+
+os.environ.setdefault("APP_ENV", "test")
+_env_file = Path(__file__).parent.parent / ".env.local"
+_real_db_url = dotenv_values(_env_file).get("DATABASE_URL")
+os.environ.setdefault(
+    "DATABASE_URL",
+    _real_db_url or "postgresql+asyncpg://test:test@localhost/test",
+)
+```
 
 - [ ] **Step 1: 失敗するテストを書く**
 
 ```python
 # backend/tests/test_groups_api.py
-from uuid import UUID
-
-import pytest
-from fastapi.testclient import TestClient
-
-from app.main import app
+from httpx import AsyncClient
 
 
-@pytest.fixture(autouse=True)
-def _use_dev_env(monkeypatch):
-    monkeypatch.setenv("APP_ENV", "dev")
-    yield
-
-
-def test_create_group_returns_201_with_creator_member_id():
-    res = TestClient(app).post(
+async def test_create_group_returns_201_with_creator_member_id(client: AsyncClient):
+    res = await client.post(
         "/api/groups",
         json={"name": "渋谷飲み会", "memberNames": ["Alice", "Bob"]},
     )
     assert res.status_code == 201
     body = res.json()
     assert body["name"] == "渋谷飲み会"
-    assert UUID(body["id"])
-    assert UUID(body["creatorMemberId"])
+    assert body["id"]
+    assert body["creatorMemberId"]
     # creator_member_id は memberNames の先頭("Alice")の id
     assert len(body["members"]) == 2
     assert body["members"][0]["name"] == "Alice"
 
 
-def test_create_group_with_no_members_creates_empty_group():
-    res = TestClient(app).post("/api/groups", json={"name": "未確定", "memberNames": []})
+async def test_create_group_with_no_members_creates_empty_group(client: AsyncClient):
+    res = await client.post(
+        "/api/groups", json={"name": "未確定", "memberNames": []}
+    )
     assert res.status_code == 201
-    assert res.json()["members"] == []
-    assert res.json()["creatorMemberId"] is None
+    body = res.json()
+    assert body["members"] == []
+    assert body["creatorMemberId"] is None
 
 
-def test_create_group_validates_name_required():
-    res = TestClient(app).post("/api/groups", json={"memberNames": []})
+async def test_create_group_validates_name_required(client: AsyncClient):
+    res = await client.post("/api/groups", json={"memberNames": []})
     assert res.status_code == 422
 ```
+
+> **`pytest-asyncio` の `asyncio_mode = "auto"`** 設定により、`async def test_*` は自動的に async test として扱われる(`@pytest.mark.asyncio` 不要)。`pyproject.toml` で設定済み。
 
 - [ ] **Step 2: テスト実行 → 失敗確認**
 
 ```bash
 uv run pytest tests/test_groups_api.py -v
 ```
+
 期待出力: 404 になる(エンドポイント未実装)。
 
-- [ ] **Step 3: `app/routers/groups.py` 実装**
+- [ ] **Step 3: `app/services/groups.py` を実装(DB + ビジネスルール)**
 
 ```python
-# backend/app/routers/groups.py
+# backend/app/services/groups.py
+"""グループドメインのビジネスロジック(DB 操作とビジネスルール)。
+
+router からは HTTP・DTO 変換を取り除き、ここに DB 読み書き・トランザクション境界・
+複数エンティティの atomic 作成等を集約する。Pydantic schema には依存しない
+(プリミティブ引数 → ORM model 戻り値)。
+"""
 from __future__ import annotations
 
-from uuid import UUID
+from datetime import date
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models import Group, Member
+
+
+async def create_group_with_initial_members(
+    db: AsyncSession,
+    *,
+    name: str,
+    event_date: date | None,
+    member_names: list[str],
+) -> tuple[Group, list[Member]]:
+    """グループ + 初期メンバーを 1 トランザクションで作成する。
+
+    member_names の順序は意味を持つ。先頭が「作成者」(creator)として扱われる。
+    """
+    group = Group(name=name, event_date=event_date)
+    db.add(group)
+    await db.flush()  # group.id を確定させる
+
+    members = [Member(group_id=group.id, name=n) for n in member_names]
+    db.add_all(members)
+    await db.commit()
+    await db.refresh(group)
+    for m in members:
+        await db.refresh(m)
+
+    return group, members
+```
+
+- [ ] **Step 4: `app/api/__init__.py` を作成**
+
+```python
+# backend/app/api/__init__.py
+```
+
+- [ ] **Step 5: `app/api/groups.py` を実装(router: HTTP I/O のみ)**
+
+```python
+# backend/app/api/groups.py
+from __future__ import annotations
 
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
-from app.models import Group, Member
 from app.schemas.group import CreateGroupRequest, GroupResponse, MemberSummary
+from app.services import groups as groups_service
 
 router = APIRouter(prefix="/api/groups", tags=["groups"])
 
@@ -1079,18 +1268,12 @@ async def create_group(
     認可なし: グループ作成時はまだ member が存在しないため X-Member-Id を要求しない
     (設計書 §7 共通仕様の例外)。
     """
-    group = Group(name=body.name, event_date=body.event_date)
-    db.add(group)
-    await db.flush()
-
-    members: list[Member] = [
-        Member(group_id=group.id, name=name) for name in body.member_names
-    ]
-    db.add_all(members)
-    await db.commit()
-    await db.refresh(group)
-    for m in members:
-        await db.refresh(m)
+    group, members = await groups_service.create_group_with_initial_members(
+        db,
+        name=body.name,
+        event_date=body.event_date,
+        member_names=body.member_names,
+    )
 
     return GroupResponse(
         id=group.id,
@@ -1106,28 +1289,31 @@ async def create_group(
     )
 ```
 
-- [ ] **Step 4: `app/main.py` に router を登録**
+- [ ] **Step 6: `app/main.py` に router を登録**
 
 ```python
-# 既存の include_router 群に追加:
-from app.routers import groups, health  # 既存に groups を追加
+# 既存の include_router 群を更新:
+from app.api import groups, health
 
 # create_app 内:
 app.include_router(health.router)
 app.include_router(groups.router)
 ```
 
-- [ ] **Step 5: テスト実行 → PASS確認**
+> **ディレクトリは `app/api/` に統一**: Phase 0 で作った `app/routers/health.py` は Task 6 着手時に `app/api/health.py` に移し、`app/routers/` ディレクトリは削除する(8 行の小さなファイルなので機能影響なし)。Phase 1 以降で追加する endpoint は全て `app/api/` 配下に置く。
+
+- [ ] **Step 7: テスト実行 → PASS確認**
 
 ```bash
 uv run pytest tests/test_groups_api.py -v
 ```
+
 期待出力: 3 passed.
 
-- [ ] **Step 6: コミット**
+- [ ] **Step 8: コミット**
 
 ```bash
-git add backend/app/routers/groups.py backend/app/main.py backend/tests/test_groups_api.py
+git add backend/app/api/ backend/app/services/groups.py backend/app/main.py backend/tests/test_groups_api.py
 git commit -m "feat(api): add POST /api/groups (create group with initial members)"
 ```
 
@@ -1136,8 +1322,16 @@ git commit -m "feat(api): add POST /api/groups (create group with initial member
 ### Task 7: API: `GET /api/groups/{group_id}`(グループ詳細取得)
 
 **Files:**
-- Modify: `backend/app/routers/groups.py`(GET endpoint 追加)
+
+- Modify: `backend/app/services/groups.py`(`get_group_full` を追加)
+- Modify: `backend/app/api/groups.py`(GET endpoint 追加)
 - Modify: `backend/tests/test_groups_api.py`
+
+> **Task 7-12 の API 整合テスト共通**: Task 6 で `tests/conftest.py` に追加した `client` fixture(AsyncClient + NullPool)を全テストで使う。下記サンプルが `TestClient(app).post(...)` などの旧形式で書かれている場合は、Task 6 の AsyncClient パターンに置き換えて実装する:
+>
+> - `def test_xxx():` → `async def test_xxx(client: AsyncClient):`
+> - `TestClient(app).post(...)` → `await client.post(...)`
+> - `_use_dev_env` のような APP_ENV monkeypatch fixture は不要(conftest top-level が `.env.local` の URL を設定済み)。
 
 - [ ] **Step 1: 失敗するテストを書く**(test_groups_api.py に追記)
 
@@ -1181,30 +1375,30 @@ def test_get_group_returns_401_when_member_not_in_group():
 ```bash
 uv run pytest tests/test_groups_api.py::test_get_group_returns_full_payload -v
 ```
+
 期待出力: 405 か 404(エンドポイント未実装)。
 
-- [ ] **Step 3: `groups.py` に GET 実装**
+- [ ] **Step 3: `services/groups.py` に取得ロジックを追加**
 
 ```python
-# backend/app/routers/groups.py に追加
+# backend/app/services/groups.py に追加
+from uuid import UUID
+
 from sqlalchemy import select
 
-from app.auth.deps import require_member
 from app.exceptions.domain import GroupNotFound
-from app.models import Member, Payment, PaymentShare
-from app.schemas.payment import PaymentSummary, ShareSummary
+from app.models import Group, Member, Payment, PaymentShare
 
 
-@router.get("/{group_id}", response_model=GroupResponse)
-async def get_group(
+async def get_group_full(
+    db: AsyncSession,
+    *,
     group_id: UUID,
-    member: Member = Depends(require_member),
-    db: AsyncSession = Depends(get_session),
-) -> GroupResponse:
-    """グループ情報 + メンバー + 未削除の支払い一覧を取得。
+) -> tuple[Group, list[Member], list[Payment], dict[UUID, list[PaymentShare]]]:
+    """グループ + メンバー + 未削除支払い + 各支払いの shares を取得する。
 
     Phase 1 では Payment ↔ PaymentShare の relationship を ORM 上で
-    定義していないため、shares は別クエリで取得する(YAGNI、Phase 5 で
+    定義していないため、shares は別クエリで取得する(YAGNI。Phase 5 で
     パフォーマンス改善時に relationship + selectinload を導入する)。
     """
     group = await db.scalar(select(Group).where(Group.id == group_id))
@@ -1233,6 +1427,31 @@ async def get_group(
         )
         for s in shares_rows.all():
             shares_by_payment[s.payment_id].append(s)
+
+    return group, list(members), list(payments), shares_by_payment
+```
+
+- [ ] **Step 4: `api/groups.py` に GET 実装(router: DTO 変換のみ)**
+
+```python
+# backend/app/api/groups.py に追加
+from uuid import UUID
+
+from app.auth.deps import require_member
+from app.models import Member
+from app.schemas.payment import PaymentSummary, ShareSummary
+
+
+@router.get("/{group_id}", response_model=GroupResponse)
+async def get_group(
+    group_id: UUID,
+    member: Member = Depends(require_member),
+    db: AsyncSession = Depends(get_session),
+) -> GroupResponse:
+    """グループ情報 + メンバー + 未削除の支払い一覧を取得。"""
+    group, members, payments, shares_by_payment = await groups_service.get_group_full(
+        db, group_id=group_id
+    )
 
     return GroupResponse(
         id=group.id,
@@ -1263,17 +1482,18 @@ async def get_group(
     )
 ```
 
-- [ ] **Step 4: テスト実行 → PASS確認**
+- [ ] **Step 5: テスト実行 → PASS確認**
 
 ```bash
 uv run pytest tests/test_groups_api.py -v
 ```
+
 期待出力: 6 passed(Task 6 の 3 + 今回の 3)。
 
-- [ ] **Step 5: コミット**
+- [ ] **Step 6: コミット**
 
 ```bash
-git add backend/app/routers/groups.py backend/tests/test_groups_api.py
+git add backend/app/api/groups.py backend/app/services/groups.py backend/tests/test_groups_api.py
 git commit -m "feat(api): add GET /api/groups/{id} with X-Member-Id authorization"
 ```
 
@@ -1282,7 +1502,9 @@ git commit -m "feat(api): add GET /api/groups/{id} with X-Member-Id authorizatio
 ### Task 8: API: `POST /api/groups/{group_id}/members`(メンバー追加)
 
 **Files:**
-- Create: `backend/app/routers/members.py`
+
+- Create: `backend/app/services/members.py`
+- Create: `backend/app/api/members.py`
 - Create: `backend/tests/test_members_api.py`
 - Modify: `backend/app/main.py`
 
@@ -1335,10 +1557,37 @@ def test_add_member_requires_x_member_id():
 uv run pytest tests/test_members_api.py -v
 ```
 
-- [ ] **Step 3: `app/routers/members.py` 実装**
+- [ ] **Step 3: `services/members.py` 実装(DB)**
 
 ```python
-# backend/app/routers/members.py
+# backend/app/services/members.py
+from __future__ import annotations
+
+from uuid import UUID
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models import Member
+
+
+async def add_member_to_group(
+    db: AsyncSession,
+    *,
+    group_id: UUID,
+    name: str,
+) -> Member:
+    """既存グループにメンバーを 1 名追加する。"""
+    new_member = Member(group_id=group_id, name=name)
+    db.add(new_member)
+    await db.commit()
+    await db.refresh(new_member)
+    return new_member
+```
+
+- [ ] **Step 4: `api/members.py` 実装(router)**
+
+```python
+# backend/app/api/members.py
 from __future__ import annotations
 
 from uuid import UUID
@@ -1348,8 +1597,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import require_member
 from app.db.session import get_session
-from app.models import Member as MemberModel
+from app.models import Member
 from app.schemas.member import CreateMemberRequest, MemberResponse
+from app.services import members as members_service
 
 router = APIRouter(prefix="/api/groups/{group_id}/members", tags=["members"])
 
@@ -1358,13 +1608,12 @@ router = APIRouter(prefix="/api/groups/{group_id}/members", tags=["members"])
 async def add_member(
     group_id: UUID,
     body: CreateMemberRequest,
-    _requester: MemberModel = Depends(require_member),
+    _requester: Member = Depends(require_member),
     db: AsyncSession = Depends(get_session),
 ) -> MemberResponse:
-    new_member = MemberModel(group_id=group_id, name=body.name)
-    db.add(new_member)
-    await db.commit()
-    await db.refresh(new_member)
+    new_member = await members_service.add_member_to_group(
+        db, group_id=group_id, name=body.name
+    )
     return MemberResponse(
         id=new_member.id,
         group_id=new_member.group_id,
@@ -1373,24 +1622,24 @@ async def add_member(
     )
 ```
 
-- [ ] **Step 4: `app/main.py` に router 登録**
+- [ ] **Step 5: `app/main.py` に router 登録**
 
 ```python
-from app.routers import groups, health, members
+from app.api import groups, members  # 追加
 ...
 app.include_router(members.router)
 ```
 
-- [ ] **Step 5: テスト実行 → PASS確認**
+- [ ] **Step 6: テスト実行 → PASS確認**
 
 ```bash
 uv run pytest tests/test_members_api.py -v
 ```
 
-- [ ] **Step 6: コミット**
+- [ ] **Step 7: コミット**
 
 ```bash
-git add backend/app/routers/members.py backend/app/main.py backend/tests/test_members_api.py
+git add backend/app/api/members.py backend/app/services/members.py backend/app/main.py backend/tests/test_members_api.py
 git commit -m "feat(api): add POST /api/groups/{id}/members"
 ```
 
@@ -1399,7 +1648,9 @@ git commit -m "feat(api): add POST /api/groups/{id}/members"
 ### Task 9: API: `POST /api/groups/{group_id}/payments`(支払い登録)
 
 **Files:**
-- Create: `backend/app/routers/payments.py`
+
+- Create: `backend/app/services/payments.py`
+- Create: `backend/app/api/payments.py`
 - Create: `backend/tests/test_payments_api.py`
 - Modify: `backend/app/main.py`
 - Modify: `backend/app/exceptions/domain.py`(InvalidPaymentShares 追加)
@@ -1484,43 +1735,52 @@ def test_create_payment_rejects_share_for_non_member():
 uv run pytest tests/test_payments_api.py -v
 ```
 
-- [ ] **Step 4: `app/routers/payments.py` 実装**
+- [ ] **Step 4: `services/payments.py` 実装(DB + ビジネスルール)**
 
 ```python
-# backend/app/routers/payments.py
+# backend/app/services/payments.py
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.deps import require_member
-from app.db.session import get_session
 from app.exceptions.domain import InvalidPaymentShares
 from app.models import Member, Payment, PaymentShare, PaymentSource, ShareType
-from app.schemas.payment import (
-    CreatePaymentRequest,
-    PaymentSummary,
-    ShareSummary,
-)
-
-# /api/groups/{group_id}/payments と /api/payments/{payment_id} を 1 router に統合
-group_router = APIRouter(prefix="/api/groups/{group_id}/payments", tags=["payments"])
-payment_router = APIRouter(prefix="/api/payments", tags=["payments"])
 
 
-@group_router.post("", status_code=status.HTTP_201_CREATED, response_model=PaymentSummary)
-async def create_payment(
+@dataclass(frozen=True)
+class ShareInputDTO:
+    """service 層の入力 DTO(Pydantic 非依存)。
+
+    api 層は CreatePaymentRequest.shares を ShareInputDTO のリストに
+    変換してから service を呼ぶ。
+    """
+
+    member_id: UUID
+    share_type: str  # "equal" | "ratio" | "amount"
+    share_value: float
+
+
+async def create_payment_with_shares(
+    db: AsyncSession,
+    *,
     group_id: UUID,
-    body: CreatePaymentRequest,
-    _requester: Member = Depends(require_member),
-    db: AsyncSession = Depends(get_session),
-) -> PaymentSummary:
-    # shares の member_id がすべて group に属することを検証
-    member_ids = {s.member_id for s in body.shares} | {body.payer_id}
+    payer_id: UUID,
+    amount: int,
+    description: str,
+    paid_at: datetime | None,
+    shares: list[ShareInputDTO],
+) -> tuple[Payment, list[PaymentShare]]:
+    """支払い + shares を 1 トランザクションで作成する。
+
+    payer_id と全 shares の member_id が group_id に属していることを検証し、
+    属していなければ InvalidPaymentShares を raise する。
+    """
+    member_ids = {s.member_id for s in shares} | {payer_id}
     rows = await db.scalars(
         select(Member.id).where(
             Member.group_id == group_id, Member.id.in_(member_ids)
@@ -1535,27 +1795,80 @@ async def create_payment(
 
     payment = Payment(
         group_id=group_id,
-        payer_id=body.payer_id,
-        amount=body.amount,
-        description=body.description,
-        paid_at=body.paid_at or datetime.now(tz=timezone.utc),
+        payer_id=payer_id,
+        amount=amount,
+        description=description,
+        paid_at=paid_at or datetime.now(tz=timezone.utc),
         source=PaymentSource.MANUAL,
     )
     db.add(payment)
     await db.flush()
 
-    shares = [
+    share_models = [
         PaymentShare(
             payment_id=payment.id,
             member_id=s.member_id,
             share_type=ShareType(s.share_type),
             share_value=s.share_value,
         )
-        for s in body.shares
+        for s in shares
     ]
-    db.add_all(shares)
+    db.add_all(share_models)
     await db.commit()
     await db.refresh(payment)
+    return payment, share_models
+```
+
+- [ ] **Step 5: `api/payments.py` 実装(router)**
+
+```python
+# backend/app/api/payments.py
+from __future__ import annotations
+
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.auth.deps import require_member
+from app.db.session import get_session
+from app.models import Member
+from app.schemas.payment import (
+    CreatePaymentRequest,
+    PaymentSummary,
+    ShareSummary,
+)
+from app.services import payments as payments_service
+from app.services.payments import ShareInputDTO
+
+# すべての payment 系 endpoint を /api/groups/{group_id}/payments 配下に統合
+# (PATCH/DELETE も group_id を path に持たせ、Depends(require_member) を再利用)
+router = APIRouter(prefix="/api/groups/{group_id}/payments", tags=["payments"])
+
+
+@router.post("", status_code=status.HTTP_201_CREATED, response_model=PaymentSummary)
+async def create_payment(
+    group_id: UUID,
+    body: CreatePaymentRequest,
+    _requester: Member = Depends(require_member),
+    db: AsyncSession = Depends(get_session),
+) -> PaymentSummary:
+    payment, share_models = await payments_service.create_payment_with_shares(
+        db,
+        group_id=group_id,
+        payer_id=body.payer_id,
+        amount=body.amount,
+        description=body.description,
+        paid_at=body.paid_at,
+        shares=[
+            ShareInputDTO(
+                member_id=s.member_id,
+                share_type=s.share_type,
+                share_value=s.share_value,
+            )
+            for s in body.shares
+        ],
+    )
 
     return PaymentSummary(
         id=payment.id,
@@ -1570,18 +1883,17 @@ async def create_payment(
                 share_type=s.share_type.value,
                 share_value=float(s.share_value),
             )
-            for s in shares
+            for s in share_models
         ],
     )
 ```
 
-- [ ] **Step 5: `app/main.py` に登録**
+- [ ] **Step 6: `app/main.py` に登録**
 
 ```python
-from app.routers import groups, health, members, payments
+from app.api import groups, members, payments
 ...
-app.include_router(payments.group_router)
-app.include_router(payments.payment_router)
+app.include_router(payments.router)
 ```
 
 - [ ] **Step 6: テスト実行 → PASS確認**
@@ -1593,27 +1905,31 @@ uv run pytest tests/test_payments_api.py -v
 - [ ] **Step 7: コミット**
 
 ```bash
-git add backend/app/routers/payments.py backend/app/main.py \
-  backend/app/exceptions/domain.py backend/tests/test_payments_api.py
+git add backend/app/api/payments.py backend/app/services/payments.py \
+  backend/app/main.py backend/app/exceptions/domain.py \
+  backend/tests/test_payments_api.py
 git commit -m "feat(api): add POST /api/groups/{id}/payments with shares validation"
 ```
 
 ---
 
-### Task 10: API: `PATCH /api/payments/{payment_id}`(支払い編集)
+### Task 10: API: `PATCH /api/groups/{group_id}/payments/{payment_id}`(支払い編集)
 
 **Files:**
-- Modify: `backend/app/routers/payments.py`
+
+- Modify: `backend/app/services/payments.py`(update + helper を追加)
+- Modify: `backend/app/api/payments.py`
 - Modify: `backend/tests/test_payments_api.py`
+
+> **設計判断**: PATCH/DELETE も group 配下にネストする(`/api/groups/{group_id}/payments/{payment_id}`)。これにより `Depends(require_member)` をそのまま再利用でき、独自の `X-Group-Id` ヘッダを増やさずに済む。詳細は `design.md` §7。
 
 - [ ] **Step 1: 失敗するテストを追加**
 
 ```python
 # tests/test_payments_api.py に追加
-def test_patch_payment_updates_amount_and_description():
-    client = TestClient(app)
-    gid, creator_mid, members = _create_group_with_members(client, ["A", "B"])
-    create_res = client.post(
+async def test_patch_payment_updates_amount_and_description(client: AsyncClient):
+    gid, creator_mid, members = await _create_group_with_members(client, ["A", "B"])
+    create_res = await client.post(
         f"/api/groups/{gid}/payments",
         headers={"X-Member-Id": creator_mid},
         json={
@@ -1628,9 +1944,9 @@ def test_patch_payment_updates_amount_and_description():
     )
     pid = create_res.json()["id"]
 
-    res = client.patch(
-        f"/api/payments/{pid}",
-        headers={"X-Member-Id": creator_mid, "X-Group-Id": gid},
+    res = await client.patch(
+        f"/api/groups/{gid}/payments/{pid}",
+        headers={"X-Member-Id": creator_mid},
         json={"amount": 5000, "description": "new"},
     )
     assert res.status_code == 200
@@ -1639,74 +1955,76 @@ def test_patch_payment_updates_amount_and_description():
     assert body["description"] == "new"
 ```
 
-> **設計判断**: PATCH/DELETE は path に group_id を持たないため、X-Member-Id 検証用に **X-Group-Id ヘッダ**で対象 group を指定する。これは設計書 §7 共通仕様の例外運用。
-
 - [ ] **Step 2: テスト失敗確認**
 
-- [ ] **Step 3: `payment_router` に PATCH 実装**
+- [ ] **Step 3: `services/payments.py` に共通ヘルパと update を追加**
 
 ```python
-# backend/app/routers/payments.py に追加
-from fastapi import Header
-from app.schemas.payment import UpdatePaymentRequest
+# backend/app/services/payments.py に追加
+from datetime import datetime
+from uuid import UUID
+
+from app.exceptions.domain import GroupNotFound
 
 
-async def _require_member_for_payment(
+async def get_payment_in_group(
+    db: AsyncSession,
+    *,
     payment_id: UUID,
-    x_group_id: UUID = Header(..., alias="X-Group-Id"),
-    x_member_id: UUID = Header(..., alias="X-Member-Id"),
-    db: AsyncSession = Depends(get_session),
-) -> tuple[Payment, Member]:
-    """X-Group-Id + X-Member-Id 経由で対象 payment を取り出すヘルパ。"""
-    from app.exceptions.domain import GroupNotFound, MemberMismatch
+    group_id: UUID,
+) -> Payment:
+    """payment_id が group_id に属することを検証して返す。
 
+    member の認可は router 側で `Depends(require_member)` が済ませているので、
+    ここでは payment の所属チェックだけ行う。
+    """
     payment = await db.scalar(select(Payment).where(Payment.id == payment_id))
-    if payment is None or payment.group_id != x_group_id:
-        raise GroupNotFound(f"payment {payment_id} not found in group {x_group_id}")
-
-    member = await db.scalar(
-        select(Member).where(Member.id == x_member_id, Member.group_id == x_group_id)
-    )
-    if member is None:
-        raise MemberMismatch(
-            f"member {x_member_id} is not in group {x_group_id}"
-        )
-    return payment, member
+    if payment is None or payment.group_id != group_id:
+        raise GroupNotFound(f"payment {payment_id} not found in group {group_id}")
+    return payment
 
 
-@payment_router.patch("/{payment_id}", response_model=PaymentSummary)
-async def update_payment(
-    payment_id: UUID,
-    body: UpdatePaymentRequest,
-    ctx: tuple[Payment, Member] = Depends(_require_member_for_payment),
-    db: AsyncSession = Depends(get_session),
-) -> PaymentSummary:
-    payment, _member = ctx
+@dataclass(frozen=True)
+class PaymentUpdateDTO:
+    """update 用入力 DTO。各フィールド None = 変更なし。"""
 
-    if body.payer_id is not None:
-        payment.payer_id = body.payer_id
-    if body.amount is not None:
-        payment.amount = body.amount
-    if body.description is not None:
-        payment.description = body.description
-    if body.paid_at is not None:
-        payment.paid_at = body.paid_at
+    payer_id: UUID | None = None
+    amount: int | None = None
+    description: str | None = None
+    paid_at: datetime | None = None
+    shares: list[ShareInputDTO] | None = None
 
-    if body.shares is not None:
-        # 既存 shares を全消しして入れ直す(MVP の単純戦略)
+
+async def update_payment_with_shares(
+    db: AsyncSession,
+    *,
+    payment: Payment,
+    update: PaymentUpdateDTO,
+) -> tuple[Payment, list[PaymentShare]]:
+    """既存 payment を編集する。shares が指定された場合は全置換。"""
+    if update.payer_id is not None:
+        payment.payer_id = update.payer_id
+    if update.amount is not None:
+        payment.amount = update.amount
+    if update.description is not None:
+        payment.description = update.description
+    if update.paid_at is not None:
+        payment.paid_at = update.paid_at
+
+    if update.shares is not None:
         await db.execute(
             PaymentShare.__table__.delete().where(
-                PaymentShare.payment_id == payment_id
+                PaymentShare.payment_id == payment.id
             )
         )
         new_shares = [
             PaymentShare(
-                payment_id=payment_id,
+                payment_id=payment.id,
                 member_id=s.member_id,
                 share_type=ShareType(s.share_type),
                 share_value=s.share_value,
             )
-            for s in body.shares
+            for s in update.shares
         ]
         db.add_all(new_shares)
 
@@ -1714,9 +2032,51 @@ async def update_payment(
     await db.refresh(payment)
 
     shares_rows = await db.scalars(
-        select(PaymentShare).where(PaymentShare.payment_id == payment_id)
+        select(PaymentShare).where(PaymentShare.payment_id == payment.id)
     )
-    shares = shares_rows.all()
+    return payment, list(shares_rows.all())
+```
+
+- [ ] **Step 4: `api/payments.py` に PATCH 実装**
+
+```python
+# backend/app/api/payments.py に追加
+from app.schemas.payment import UpdatePaymentRequest
+from app.services.payments import PaymentUpdateDTO
+
+
+@router.patch("/{payment_id}", response_model=PaymentSummary)
+async def update_payment(
+    group_id: UUID,
+    payment_id: UUID,
+    body: UpdatePaymentRequest,
+    _requester: Member = Depends(require_member),
+    db: AsyncSession = Depends(get_session),
+) -> PaymentSummary:
+    """支払いを編集する。group 配下の payment であることを検証してから更新。"""
+    payment = await payments_service.get_payment_in_group(
+        db, payment_id=payment_id, group_id=group_id,
+    )
+
+    update = PaymentUpdateDTO(
+        payer_id=body.payer_id,
+        amount=body.amount,
+        description=body.description,
+        paid_at=body.paid_at,
+        shares=[
+            ShareInputDTO(
+                member_id=s.member_id,
+                share_type=s.share_type,
+                share_value=s.share_value,
+            )
+            for s in body.shares
+        ] if body.shares is not None else None,
+    )
+
+    payment, share_models = await payments_service.update_payment_with_shares(
+        db, payment=payment, update=update,
+    )
+
     return PaymentSummary(
         id=payment.id,
         payer_id=payment.payer_id,
@@ -1730,35 +2090,38 @@ async def update_payment(
                 share_type=s.share_type.value,
                 share_value=float(s.share_value),
             )
-            for s in shares
+            for s in share_models
         ],
     )
 ```
 
-- [ ] **Step 4: テスト実行 → PASS確認**
+> **認可の流れ**: `Depends(require_member)` が path の `group_id` + `X-Member-Id` ヘッダから「member が group に属するか」を検証。その後 `get_payment_in_group` で「payment が group に属するか」を検証する。両方クリアして初めて更新できる。
 
-- [ ] **Step 5: コミット**
+- [ ] **Step 5: テスト実行 → PASS確認**
+
+- [ ] **Step 6: コミット**
 
 ```bash
-git add backend/app/routers/payments.py backend/tests/test_payments_api.py
-git commit -m "feat(api): add PATCH /api/payments/{id} for editing payments"
+git add backend/app/api/payments.py backend/app/services/payments.py backend/tests/test_payments_api.py
+git commit -m "feat(api): add PATCH /api/groups/{group_id}/payments/{id} for editing payments"
 ```
 
 ---
 
-### Task 11: API: `DELETE /api/payments/{payment_id}`(論理削除)
+### Task 11: API: `DELETE /api/groups/{group_id}/payments/{payment_id}`(論理削除)
 
 **Files:**
-- Modify: `backend/app/routers/payments.py`
+
+- Modify: `backend/app/services/payments.py`(`soft_delete_payment` を追加)
+- Modify: `backend/app/api/payments.py`
 - Modify: `backend/tests/test_payments_api.py`
 
 - [ ] **Step 1: 失敗するテストを追加**
 
 ```python
-def test_delete_payment_soft_deletes():
-    client = TestClient(app)
-    gid, creator_mid, members = _create_group_with_members(client, ["A"])
-    create_res = client.post(
+async def test_delete_payment_soft_deletes(client: AsyncClient):
+    gid, creator_mid, members = await _create_group_with_members(client, ["A"])
+    create_res = await client.post(
         f"/api/groups/{gid}/payments",
         headers={"X-Member-Id": creator_mid},
         json={
@@ -1772,45 +2135,59 @@ def test_delete_payment_soft_deletes():
     )
     pid = create_res.json()["id"]
 
-    res = client.delete(
-        f"/api/payments/{pid}",
-        headers={"X-Member-Id": creator_mid, "X-Group-Id": gid},
+    res = await client.delete(
+        f"/api/groups/{gid}/payments/{pid}",
+        headers={"X-Member-Id": creator_mid},
     )
     assert res.status_code == 204
 
     # 一覧から消える
-    list_res = client.get(f"/api/groups/{gid}", headers={"X-Member-Id": creator_mid})
+    list_res = await client.get(f"/api/groups/{gid}", headers={"X-Member-Id": creator_mid})
     assert list_res.json()["payments"] == []
 ```
 
 - [ ] **Step 2: 失敗確認**
 
-- [ ] **Step 3: 実装**
+- [ ] **Step 3: `services/payments.py` に soft delete を追加**
 
 ```python
-# backend/app/routers/payments.py に追加
+# backend/app/services/payments.py に追加
 from datetime import datetime, timezone
+
+
+async def soft_delete_payment(db: AsyncSession, *, payment: Payment) -> None:
+    """payment.deleted_at に現在時刻を入れて論理削除する。"""
+    payment.deleted_at = datetime.now(tz=timezone.utc)
+    await db.commit()
+```
+
+- [ ] **Step 4: `api/payments.py` に DELETE 実装**
+
+```python
+# backend/app/api/payments.py に追加
 from fastapi import Response
 
 
-@payment_router.delete("/{payment_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{payment_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_payment(
+    group_id: UUID,
     payment_id: UUID,
-    ctx: tuple[Payment, Member] = Depends(_require_member_for_payment),
+    _requester: Member = Depends(require_member),
     db: AsyncSession = Depends(get_session),
 ) -> Response:
-    payment, _member = ctx
-    payment.deleted_at = datetime.now(tz=timezone.utc)
-    await db.commit()
+    payment = await payments_service.get_payment_in_group(
+        db, payment_id=payment_id, group_id=group_id,
+    )
+    await payments_service.soft_delete_payment(db, payment=payment)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 ```
 
-- [ ] **Step 4: PASS確認**
+- [ ] **Step 5: PASS確認**
 
-- [ ] **Step 5: コミット**
+- [ ] **Step 6: コミット**
 
 ```bash
-git commit -am "feat(api): add DELETE /api/payments/{id} (soft delete)"
+git commit -am "feat(api): add DELETE /api/groups/{group_id}/payments/{id} (soft delete)"
 ```
 
 ---
@@ -1818,9 +2195,14 @@ git commit -am "feat(api): add DELETE /api/payments/{id} (soft delete)"
 ### Task 12: API: `GET /api/groups/{group_id}/settlement`(清算結果)
 
 **Files:**
-- Create: `backend/app/routers/settlement.py`
+
+- Modify: `backend/app/utils/settlement.py`(`compute_share_amounts` を追加)
+- Create: `backend/app/services/settlement.py`(DB load + ネット収支計算)
+- Create: `backend/app/api/settlement.py`(router)
 - Create: `backend/tests/test_settlement_api.py`
 - Modify: `backend/app/main.py`
+
+> **3 層分離**: 純粋計算 = `utils/settlement.py`、DB アクセス = `services/settlement.py`、HTTP I/O = `api/settlement.py`。同名の 3 ファイルが層別の責務を担う。
 
 - [ ] **Step 1: 失敗するテストを書く**
 
@@ -1877,65 +2259,95 @@ def test_settlement_for_three_party_equal_split():
 
 - [ ] **Step 2: 失敗確認**
 
-- [ ] **Step 3: `app/routers/settlement.py` 実装**
+- [ ] **Step 3: `utils/settlement.py` に `compute_share_amounts` を追加(純粋関数)**
 
 ```python
-# backend/app/routers/settlement.py
-from __future__ import annotations
-
-from collections import defaultdict
-from uuid import UUID
-
-from fastapi import APIRouter, Depends
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.auth.deps import require_member
-from app.db.session import get_session
-from app.models import Member, Payment, PaymentShare, ShareType
-from app.schemas.settlement import SettlementResponse, TransferDTO
-from app.services.settlement import settle
-
-router = APIRouter(prefix="/api/groups/{group_id}/settlement", tags=["settlement"])
+# backend/app/utils/settlement.py に追加
+from typing import Protocol
 
 
-def _compute_share_amounts(
-    payment: Payment, shares: list[PaymentShare]
+class _ShareLike(Protocol):
+    """payment_share の最小限のインタフェース(utils が ORM に依存しないため)。"""
+
+    member_id: UUID
+    # share_type は str("equal" | "amount" | "ratio")で受け取る
+    share_type: str
+    share_value: float
+
+
+def compute_share_amounts(
+    payment_amount: int,
+    shares: list[_ShareLike],
 ) -> dict[UUID, int]:
-    """1 件の payment 内での各 member の負担額を計算。
+    """1 件の payment 内での各 member の負担額を計算する純粋関数。
 
-    - equal: amount を均等割(端数は最初の member に)
+    - equal: payment_amount を均等割(端数は最初の share に寄せる)
     - amount: share_value を直接負担額として使う
-    - ratio: share_value を比率として配分(MVP は未対応、後フェーズで)
+    - ratio: share_value を比率として配分(MVP は未対応、equal にフォールバック)
     """
     if not shares:
         return {}
 
-    if all(s.share_type == ShareType.AMOUNT for s in shares):
+    if all(s.share_type == "amount" for s in shares):
         return {s.member_id: int(s.share_value) for s in shares}
 
-    if all(s.share_type == ShareType.EQUAL for s in shares):
+    if all(s.share_type == "equal" for s in shares):
         n = len(shares)
-        base = payment.amount // n
-        remainder = payment.amount - base * n
+        base = payment_amount // n
+        remainder = payment_amount - base * n
         result = {s.member_id: base for s in shares}
-        # 端数は最初の share に寄せる(規約は問わないので決定的にする)
-        first = shares[0].member_id
-        result[first] += remainder
+        result[shares[0].member_id] += remainder  # 端数を先頭に寄せて決定的に
         return result
 
     # ratio やミックスは MVP では equal にフォールバック
     n = len(shares)
-    base = payment.amount // n
+    base = payment_amount // n
     return {s.member_id: base for s in shares}
+```
+
+> **utils が ORM に依存しないこと**: `_ShareLike` Protocol 経由で `share_type` を `str` として受ける。SQLAlchemy の `ShareType` enum は service 層で `s.share_type.value` に変換してから渡す。これで utils は SQLAlchemy 非依存(framework-agnostic)を保てる。
+
+- [ ] **Step 4: `services/settlement.py` 実装(DB load + ネット収支)**
+
+```python
+# backend/app/services/settlement.py
+"""清算 service: DB から payments + shares を読み、純粋関数 utils を呼んで結果を返す。"""
+from __future__ import annotations
+
+from collections import defaultdict
+from dataclasses import dataclass
+from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models import Payment, PaymentShare
+from app.utils.settlement import Transfer, compute_share_amounts, settle
 
 
-@router.get("", response_model=SettlementResponse)
-async def get_settlement(
+@dataclass(frozen=True)
+class _ShareForCalc:
+    """utils.settlement.compute_share_amounts に渡す DTO(ORM 非依存化)。"""
+
+    member_id: UUID
+    share_type: str
+    share_value: float
+
+
+@dataclass(frozen=True)
+class SettlementResult:
+    """service の戻り値。router が DTO 変換する。"""
+
+    transfers: list[Transfer]
+    net_balances: dict[UUID, int]
+
+
+async def compute_settlement_for_group(
+    db: AsyncSession,
+    *,
     group_id: UUID,
-    member: Member = Depends(require_member),
-    db: AsyncSession = Depends(get_session),
-) -> SettlementResponse:
+) -> SettlementResult:
+    """group の未削除 payments + shares を読み、清算結果を計算する。"""
     payments = (
         await db.scalars(
             select(Payment).where(
@@ -1945,7 +2357,7 @@ async def get_settlement(
     ).all()
 
     if not payments:
-        return SettlementResponse(transfers=[], net_balances={})
+        return SettlementResult(transfers=[], net_balances={})
 
     payment_ids = [p.id for p in payments]
     shares_by_payment: dict[UUID, list[PaymentShare]] = defaultdict(list)
@@ -1959,35 +2371,77 @@ async def get_settlement(
     net: dict[UUID, int] = defaultdict(int)
     for p in payments:
         net[p.payer_id] += p.amount  # payer が一旦全額立替
-        for member_id, owed in _compute_share_amounts(p, shares_by_payment[p.id]).items():
-            net[member_id] -= owed  # 各 member が消費した分
+        share_dtos = [
+            _ShareForCalc(
+                member_id=s.member_id,
+                share_type=s.share_type.value,
+                share_value=float(s.share_value),
+            )
+            for s in shares_by_payment[p.id]
+        ]
+        for member_id, owed in compute_share_amounts(p.amount, share_dtos).items():
+            net[member_id] -= owed
 
-    # 0 だけのメンバーは除外
+    # 0 だけのメンバーは除外して送金最小化
     nonzero = {k: v for k, v in net.items() if v != 0}
     transfers = settle(nonzero)
 
+    return SettlementResult(transfers=transfers, net_balances=dict(net))
+```
+
+- [ ] **Step 5: `api/settlement.py` 実装(router: DTO 変換のみ)**
+
+```python
+# backend/app/api/settlement.py
+from __future__ import annotations
+
+from uuid import UUID
+
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.auth.deps import require_member
+from app.db.session import get_session
+from app.models import Member
+from app.schemas.settlement import SettlementResponse, TransferDTO
+from app.services import settlement as settlement_service
+
+router = APIRouter(prefix="/api/groups/{group_id}/settlement", tags=["settlement"])
+
+
+@router.get("", response_model=SettlementResponse)
+async def get_settlement(
+    group_id: UUID,
+    _member: Member = Depends(require_member),
+    db: AsyncSession = Depends(get_session),
+) -> SettlementResponse:
+    result = await settlement_service.compute_settlement_for_group(
+        db, group_id=group_id
+    )
     return SettlementResponse(
         transfers=[
             TransferDTO(from_id=t.from_id, to_id=t.to_id, amount=t.amount)
-            for t in transfers
+            for t in result.transfers
         ],
-        net_balances={str(k): v for k, v in net.items()},
+        net_balances={str(k): v for k, v in result.net_balances.items()},
     )
 ```
 
-- [ ] **Step 4: `app/main.py` に登録**
+- [ ] **Step 6: `app/main.py` に登録**
 
 ```python
-from app.routers import groups, health, members, payments, settlement
+from app.api import groups, members, payments, settlement
 ...
 app.include_router(settlement.router)
 ```
 
-- [ ] **Step 5: PASS確認 + コミット**
+- [ ] **Step 7: PASS確認 + コミット**
 
 ```bash
 uv run pytest tests/test_settlement_api.py -v
-git add backend/app/routers/settlement.py backend/app/main.py backend/tests/test_settlement_api.py
+git add backend/app/api/settlement.py backend/app/services/settlement.py \
+  backend/app/utils/settlement.py backend/app/main.py \
+  backend/tests/test_settlement_api.py
 git commit -m "feat(api): add GET /api/groups/{id}/settlement"
 ```
 
@@ -1996,6 +2450,7 @@ git commit -m "feat(api): add GET /api/groups/{id}/settlement"
 ### Task 13: OpenAPI dump スクリプト
 
 **Files:**
+
 - Create: `backend/scripts/dump_openapi.py`
 - Create: `backend/openapi.json`(自動生成、コミット対象)
 - Modify: `backend/pyproject.toml`(scripts 設定は任意)
@@ -2006,7 +2461,7 @@ git commit -m "feat(api): add GET /api/groups/{id}/settlement"
 # backend/scripts/dump_openapi.py
 """FastAPI app の OpenAPI スキーマを openapi.json にダンプする。
 
-Frontend の codegen(openapi-zod-client)が読み込む元ファイル。
+Frontend の codegen(kubb、Task 14)が読み込む元ファイル。
 モジュール load 時に Settings() が必要なので、test 用 env を default に。"""
 import json
 import os
@@ -2046,6 +2501,7 @@ uv run python scripts/dump_openapi.py
 ls -la openapi.json
 head -10 openapi.json
 ```
+
 期待出力: `openapi.json` が生成され、`{"openapi": "3.x.x", "info": ..., "paths": ...}` で始まる。
 
 - [ ] **Step 3: pyproject.toml に script alias を追加(任意)**
@@ -2055,6 +2511,7 @@ head -10 openapi.json
 [project.scripts]
 dump-openapi = "scripts.dump_openapi:main"
 ```
+
 > 任意。これで `uv run dump-openapi` でも実行可能になる。
 
 - [ ] **Step 4: コミット**
@@ -2066,100 +2523,322 @@ git commit -m "feat(backend): add openapi.json dump script for frontend codegen"
 
 ---
 
-### Task 14: Frontend — Zod スキーマ自動生成
+### Task 14: Frontend — kubb による型 + Zod schema + client 自動生成
+
+> **codegen ツール選定**: `openapi-zod-client` は zod v3 出力に固定されており、zod v4 と非互換。本 plan では **kubb**(plugin ベースの OpenAPI codegen)を採用し、TypeScript 型(`plugin-ts`)・Zod schema(`plugin-zod`)・axios client 関数(`plugin-client`)を 1 度の `npm run codegen` で生成する。生成 client は SPLAI 既存の `apiClient`(X-Request-Id interceptor 付き)に橋渡しすることで、認可ヘッダ等の振る舞いを失わずに型安全な呼び出しが可能。
 
 **Files:**
-- Modify: `frontend/package.json`(deps + script)
-- Create: `frontend/lib/api/schemas.gen.ts`(自動生成、追跡対象)
 
-- [ ] **Step 1: codegen ツールをインストール**
+- Modify: `frontend/package.json`(zod v4 + kubb 群を deps に、`codegen` script を `kubb generate` に)
+- Modify: `frontend/tsconfig.json`(`allowImportingTsExtensions: true` を追加)
+- Modify: `frontend/eslint.config.mjs`(`lib/api/gen/**` を ignore)
+- Create: `frontend/kubb.config.ts`
+- Create: `frontend/lib/api/kubb-client.ts`(kubb 生成 client が呼ぶ HTTP 実行関数)
+- Create: `frontend/lib/api/gen/`(自動生成、追跡対象)
+- Modify: `frontend/lib/api/api-client.ts`(import パスを `@/lib/env` / `@/lib/request-id` に)
+
+- [ ] **Step 1: 旧 codegen ツールを削除**
 
 ```bash
 cd frontend
-npm install -D openapi-zod-client
+npm uninstall zod openapi-zod-client
+rm -f lib/api/schemas.gen.ts
 ```
 
-- [ ] **Step 2: `package.json` に codegen script を追加**
+> `zod` を一旦消してから入れ直すのは、`openapi-zod-client` が依存する zod v3 が peer dep として残っていた場合の念のための clean install。
+
+- [ ] **Step 2: zod v4 と kubb を install**
+
+```bash
+npm install zod
+npm install -D '@kubb/cli@^4' '@kubb/core@^4' \
+  '@kubb/plugin-oas@^4' '@kubb/plugin-ts@^4' \
+  '@kubb/plugin-zod@^4' '@kubb/plugin-client@^4'
+```
+
+> `@kubb/cli` v5 は beta(2026-05 時点)なので v4 で揃える。v5 が安定したら一括で `^5` に上げる。
+
+- [ ] **Step 3: `kubb.config.ts` を作成**
+
+```typescript
+// frontend/kubb.config.ts
+import { defineConfig } from "@kubb/core";
+import { pluginClient } from "@kubb/plugin-client";
+import { pluginOas } from "@kubb/plugin-oas";
+import { pluginTs } from "@kubb/plugin-ts";
+import { pluginZod } from "@kubb/plugin-zod";
+
+export default defineConfig({
+  root: ".",
+  input: { path: "../backend/openapi.json" },
+  output: {
+    path: "./lib/api/gen",
+    clean: true,
+  },
+  plugins: [
+    pluginOas(),
+    pluginTs({
+      output: { path: "types" },
+      group: { type: "tag" },
+    }),
+    pluginZod({
+      output: { path: "zod" },
+      group: { type: "tag" },
+      typed: true,
+    }),
+    pluginClient({
+      output: { path: "clients" },
+      group: { type: "tag" },
+      // X-Request-Id interceptor 付きの自前 axios wrapper を使う。
+      // tsconfig の `@/*` alias 経由で解決する。
+      importPath: "@/lib/api/kubb-client",
+    }),
+  ],
+});
+```
+
+- [ ] **Step 4: `lib/api/kubb-client.ts` を作成**
+
+kubb 生成 client は default export された関数を `import fetch from '@/lib/api/kubb-client'` で読み込み、各 endpoint の HTTP 実行に使う。さらに `Client` `RequestConfig` `ResponseErrorConfig` を named export として要求する。
+
+```typescript
+// frontend/lib/api/kubb-client.ts
+import type { AxiosError, AxiosRequestConfig } from "axios";
+
+import { apiClient } from "./api-client";
+
+export type RequestConfig<TData = unknown> = AxiosRequestConfig<TData> & {
+  url: string;
+  method:
+    | "GET"
+    | "POST"
+    | "PUT"
+    | "PATCH"
+    | "DELETE"
+    | "HEAD"
+    | "OPTIONS"
+    | "get"
+    | "post"
+    | "put"
+    | "patch"
+    | "delete"
+    | "head"
+    | "options";
+};
+
+export type ResponseConfig<TData = unknown> = {
+  data: TData;
+  status: number;
+  statusText: string;
+  headers?: AxiosRequestConfig["headers"];
+};
+
+export type ResponseErrorConfig<TError = unknown> = AxiosError<TError>;
+
+/**
+ * kubb 生成 client が `request<TData, TError, TVariables>(config)` の形で
+ * 呼び出すための、**呼び出し時に型引数を取れるジェネリック関数型**。
+ *
+ * ⚠️ `type Client<T> = (...) => ...` のように型エイリアス側にジェネリクスを
+ * 書くと、型注釈時に T が固定され、呼び出し時の型引数が無視されて `unknown`
+ * になる(その結果、API ラッパの戻り値が `unknown` になる)。
+ * ジェネリクスは関数型シグネチャの内側に置くこと。
+ */
+export type Client = <TData = unknown, TError = unknown, TVariables = unknown>(
+  config: RequestConfig<TVariables>,
+) => Promise<ResponseConfig<TData>> & { error?: ResponseErrorConfig<TError> };
+
+// kubb 生成コードは `client<TData, TError, TVariables>(...)` の 3 引数で呼ぶため、
+// 全パラメータを受けられるシグネチャにする。TError は kubb 側の型整合のために
+// 受け取るだけで本体では未使用。
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const client = async <TData, TError = unknown, TVariables = unknown>(
+  config: RequestConfig<TVariables>,
+): Promise<ResponseConfig<TData>> => {
+  const response = await apiClient.request<TData, ResponseConfig<TData>>({
+    ...config,
+    headers: { ...config.headers },
+  });
+  return response;
+};
+
+export default client;
+```
+
+- [ ] **Step 5: 既存 `api-client.ts` の import パスを修正**
+
+Phase 0 で作った `lib/api/api-client.ts` の冒頭が相対 import になっている場合、`@/*` alias に統一して階層変更に強くする:
+
+```typescript
+// frontend/lib/api/api-client.ts(冒頭)
+import axios, { AxiosError } from "axios";
+import { env } from "@/lib/env";
+import { generateRequestId } from "@/lib/request-id";
+```
+
+- [ ] **Step 6: `package.json` の codegen script を更新**
 
 ```json
 {
   "scripts": {
-    "codegen": "openapi-zod-client ../backend/openapi.json -o lib/api/schemas.gen.ts --export-schemas"
+    "codegen": "kubb generate"
   }
 }
 ```
 
-- [ ] **Step 3: codegen 実行**
+- [ ] **Step 7: `tsconfig.json` に `allowImportingTsExtensions` を追加**
+
+kubb 生成コードは ESM 慣例で `import './foo.ts'` のように拡張子付きの import を出力する。Next.js は `noEmit: true` のため安全に許可できる:
+
+```json
+{
+  "compilerOptions": {
+    "noUncheckedIndexedAccess": true,
+    "noImplicitReturns": true,
+    "forceConsistentCasingInFileNames": true,
+    "allowImportingTsExtensions": true
+  }
+}
+```
+
+- [ ] **Step 8: `eslint.config.mjs` に `lib/api/gen/**` を ignore 追加\*\*
+
+自動生成コードは `any` や未使用変数で lint warn を出すが、再生成で上書きされるので lint 対象外にする。型安全性は `tsc --noEmit` で別途担保:
+
+```javascript
+globalIgnores([
+  '.next/**',
+  'out/**',
+  'build/**',
+  'next-env.d.ts',
+  // kubb による自動生成コード(再生成で上書きされるため lint 対象外)
+  'lib/api/gen/**',
+]),
+```
+
+- [ ] **Step 9: codegen 実行**
 
 ```bash
+cd frontend
 npm run codegen
-ls -la lib/api/schemas.gen.ts
-head -30 lib/api/schemas.gen.ts
 ```
-期待出力: `lib/api/schemas.gen.ts` が生成され、Zod スキーマと型定義が含まれる。
 
-- [ ] **Step 4: 動作確認(import エラーが無いこと)**
+期待出力: `lib/api/gen/` 配下に types / zod / clients が生成され、`Plugins: 4 successful, 4 total` と `Generated: <N> files`(endpoint 数によって変動)が表示される。
+
+- [ ] **Step 10: 動作確認**
 
 ```bash
-npm run typecheck
+npm run typecheck    # エラーなしを確認
+npm run lint         # エラーなしを確認(layout.tsx の既存 warning は無関係)
+npm run test         # 既存テストが pass し続けることを確認
 ```
-期待出力: pass。
 
-- [ ] **Step 5: 生成ファイルを Prettier 対象から除外(任意)**
-
-`.prettierignore` を作成または追記:
-```
-lib/api/schemas.gen.ts
-```
-これで `npm run format:check` が生成ファイルを評価しない。
-
-- [ ] **Step 6: コミット**
+- [ ] **Step 11: コミット**
 
 ```bash
-git add frontend/package.json frontend/package-lock.json frontend/lib/api/schemas.gen.ts frontend/.prettierignore
-git commit -m "feat(frontend): generate Zod schemas from backend OpenAPI"
+git add frontend/package.json frontend/package-lock.json \
+  frontend/kubb.config.ts frontend/tsconfig.json frontend/eslint.config.mjs \
+  frontend/lib/api/api-client.ts frontend/lib/api/kubb-client.ts frontend/lib/api/gen/
+git commit -m "feat(frontend): generate types/zod/client from backend OpenAPI via kubb"
 ```
+
+#### 生成された構造の使い方(参考)
+
+> **import は named export 形式**: kubb v4 は client 関数を **named export**(`export async function createGroupApiGroupsPost(...)`)として出力する。default export ではない。各 controller の `index.ts` も `export { createGroupApiGroupsPost } from './...';` で re-export しているので、tag ディレクトリ単位でまとめて import することも可能。
+
+```typescript
+// 例: グループ作成 — 個別ファイルから named import(関数名は OpenAPI operationId 由来で長い)
+import { createGroupApiGroupsPost } from "@/lib/api/gen/clients/groupsController/createGroupApiGroupsPost";
+import type { CreateGroupApiGroupsPostMutationRequest } from "@/lib/api/gen/types/groupsController/CreateGroupApiGroupsPost";
+
+const body: CreateGroupApiGroupsPostMutationRequest = {
+  name: "渋谷飲み会",
+  memberNames: ["Alice", "Bob"],
+};
+const data = await createGroupApiGroupsPost(body); // GroupResponse 型(client 関数は data だけ返す)
+```
+
+```typescript
+// もしくは tag の index 経由でまとめて import + alias で短く使う
+import {
+  createGroupApiGroupsPost as createGroup,
+  getGroupApiGroupsGroupIdGet as getGroup,
+} from "@/lib/api/gen/clients/groupsController";
+```
+
+> **⚠️ Header パラメータは positional 引数になる**: OpenAPI 仕様で `Header(...)` 宣言された値(SPLAI では `X-Member-Id`)は、kubb によって **専用の positional 引数(通常は第 3 引数)** として独立する。`config.headers` 経由ではなく、型付きオブジェクトとして直接渡す:
+>
+> ```typescript
+> // ❌ 誤り: axios config として渡す → "headers does not exist in HeaderParams" 型エラー
+> addMemberApiGroupsGroupIdMembersPost(
+>   groupId,
+>   { name },
+>   { headers: { "X-Member-Id": actor } },
+> );
+>
+> // ✅ 正解: 第 3 引数に直接ヘッダオブジェクトを渡す
+> addMemberApiGroupsGroupIdMembersPost(
+>   groupId,
+>   { name },
+>   { "X-Member-Id": actor },
+> );
+> ```
+>
+> 関数シグネチャを確認するには:
+>
+> ```bash
+> grep -A6 "^export async function" lib/api/gen/clients/<tag>Controller/<file>.ts
+> ```
+>
+> POST `/api/groups`(認可なし)などヘッダパラメータがない endpoint は第 3 引数自体が無いので、`(data, config?)` の 2 引数だけ。
+
+zod schema は `lib/api/gen/zod/<tag>/...` に同名で置かれるので、`react-hook-form` の resolver や fetch 後の追加検証で利用できる。
 
 ---
 
 ### Task 15: Frontend — メンバー識別ストレージ
 
+> **配置方針**: localStorage を直接触る低レベル関数は `lib/auth/`(infra primitive)、React hook は `hooks/`(共有 hook、複数 feature が使う)。同じ責務を 2 層に分割する理由は、低レベル関数が SSR / テスト環境で React に依存せず単体テストできるため。
+>
+> **同期パターン**: hook は **`useSyncExternalStore`** を使う。これは React 19 が外部ストア(localStorage / Redux 等)との同期に推奨する API で、`useEffect` + `setState` を使った場合に出る lint 警告(`react-hooks/no-set-state-in-effect`、cascading render の原因)を回避できる。書き込み時は同一タブ内 subscriber に通知するため CustomEvent `splai:member-id-changed` を `window` に dispatch する(`storage` イベントは別タブにしか飛ばないため)。
+
 **Files:**
-- Create: `frontend/lib/auth/member-storage.ts`
-- Create: `frontend/lib/hooks/use-member-storage.ts`
+
+- Create: `frontend/lib/auth/member-storage.ts`(localStorage 低レベル + change イベント dispatch)
+- Create: `frontend/hooks/use-member-storage.ts`(`useSyncExternalStore` で同期)
 - Create: `frontend/tests/lib/auth/member-storage.test.ts`
 
 - [ ] **Step 1: 失敗するテストを書く**
 
 ```typescript
 // frontend/tests/lib/auth/member-storage.test.ts
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from "vitest";
 import {
   getMemberId,
   setMemberId,
   clearMemberId,
-} from '@/lib/auth/member-storage';
+} from "@/lib/auth/member-storage";
 
-describe('member-storage', () => {
+describe("member-storage", () => {
   beforeEach(() => {
     localStorage.clear();
   });
 
-  it('returns null when no member id stored for group', () => {
-    expect(getMemberId('group-1')).toBeNull();
+  it("returns null when no member id stored for group", () => {
+    expect(getMemberId("group-1")).toBeNull();
   });
 
-  it('stores and retrieves member id per group', () => {
-    setMemberId('group-1', 'member-a');
-    setMemberId('group-2', 'member-b');
-    expect(getMemberId('group-1')).toBe('member-a');
-    expect(getMemberId('group-2')).toBe('member-b');
+  it("stores and retrieves member id per group", () => {
+    setMemberId("group-1", "member-a");
+    setMemberId("group-2", "member-b");
+    expect(getMemberId("group-1")).toBe("member-a");
+    expect(getMemberId("group-2")).toBe("member-b");
   });
 
-  it('clears member id for specific group', () => {
-    setMemberId('group-1', 'member-a');
-    clearMemberId('group-1');
-    expect(getMemberId('group-1')).toBeNull();
+  it("clears member id for specific group", () => {
+    setMemberId("group-1", "member-a");
+    clearMemberId("group-1");
+    expect(getMemberId("group-1")).toBeNull();
   });
 });
 ```
@@ -2170,79 +2849,127 @@ describe('member-storage', () => {
 npx vitest run tests/lib/auth/member-storage.test.ts
 ```
 
-- [ ] **Step 3: 実装**
+- [ ] **Step 3: `lib/auth/member-storage.ts` 実装**
 
 ```typescript
 // frontend/lib/auth/member-storage.ts
 /**
  * グループ単位のメンバー ID を localStorage で保持(設計書 §2)。
  * キー: g_<group_id>
+ *
+ * 書き込み(set / clear)時には CustomEvent `splai:member-id-changed` を
+ * window に dispatch する。同一タブ内の `useSyncExternalStore` 利用側が
+ * これを subscribe して再 render する。
+ *
+ * 別タブからの変更は標準の `storage` イベントが飛ぶので、subscriber 側で
+ * 両方を listen する必要がある(`hooks/use-member-storage.ts` 参照)。
  */
-const KEY_PREFIX = 'g_';
+const KEY_PREFIX = "g_";
+
+/** localStorage 変更を同一タブに通知するための CustomEvent 名。 */
+export const MEMBER_ID_CHANGED_EVENT = "splai:member-id-changed";
 
 export function getMemberId(groupId: string): string | null {
-  if (typeof window === 'undefined') return null;
+  if (typeof window === "undefined") return null;
   return localStorage.getItem(`${KEY_PREFIX}${groupId}`);
 }
 
 export function setMemberId(groupId: string, memberId: string): void {
-  if (typeof window === 'undefined') return;
+  if (typeof window === "undefined") return;
   localStorage.setItem(`${KEY_PREFIX}${groupId}`, memberId);
+  window.dispatchEvent(new Event(MEMBER_ID_CHANGED_EVENT));
 }
 
 export function clearMemberId(groupId: string): void {
-  if (typeof window === 'undefined') return;
+  if (typeof window === "undefined") return;
   localStorage.removeItem(`${KEY_PREFIX}${groupId}`);
+  window.dispatchEvent(new Event(MEMBER_ID_CHANGED_EVENT));
 }
 ```
 
+- [ ] **Step 4: `hooks/use-member-storage.ts` 実装(`useSyncExternalStore`)**
+
 ```typescript
-// frontend/lib/hooks/use-member-storage.ts
-'use client';
-import { useCallback, useEffect, useState } from 'react';
+// frontend/hooks/use-member-storage.ts
+"use client";
+
+import { useCallback, useSyncExternalStore } from "react";
+
 import {
+  MEMBER_ID_CHANGED_EVENT,
   clearMemberId,
   getMemberId,
   setMemberId,
-} from '@/lib/auth/member-storage';
+} from "@/lib/auth/member-storage";
 
+/**
+ * localStorage 上の member_id を React と同期する hook。
+ *
+ * `useSyncExternalStore` を使うことで:
+ * - useEffect + setState の cascading render(React 19 の no-set-state-in-effect)を回避
+ * - 別タブからの変更も `storage` イベントで反映
+ * - 同一タブ内の変更は CustomEvent `splai:member-id-changed` で反映
+ * - SSR 中は安全に null を返す(getServerSnapshot)
+ */
 export function useMemberStorage(groupId: string) {
-  const [memberId, _setMemberId] = useState<string | null>(null);
+  // subscribe: 外部ストアの変更通知を購読する関数
+  const subscribe = useCallback((onChange: () => void) => {
+    if (typeof window === "undefined") return () => {};
+    // 別タブでの localStorage 変更
+    window.addEventListener("storage", onChange);
+    // 同一タブでの set/clear(member-storage が dispatch する)
+    window.addEventListener(MEMBER_ID_CHANGED_EVENT, onChange);
+    return () => {
+      window.removeEventListener("storage", onChange);
+      window.removeEventListener(MEMBER_ID_CHANGED_EVENT, onChange);
+    };
+  }, []);
 
-  // SSR / hydration safe な初期化
-  useEffect(() => {
-    _setMemberId(getMemberId(groupId));
-  }, [groupId]);
+  // getSnapshot: 現在値を返す純粋関数(render 中に呼ばれる、O(1))
+  const getSnapshot = useCallback(() => getMemberId(groupId), [groupId]);
+
+  // getServerSnapshot: SSR / hydration 中の fallback
+  const getServerSnapshot = useCallback(() => null, []);
+
+  const memberId = useSyncExternalStore(
+    subscribe,
+    getSnapshot,
+    getServerSnapshot,
+  );
 
   const set = useCallback(
     (id: string) => {
       setMemberId(groupId, id);
-      _setMemberId(id);
+      // useSyncExternalStore が CustomEvent を検知して再 render するので、
+      // ここで個別に setState する必要はない。
     },
     [groupId],
   );
 
   const clear = useCallback(() => {
     clearMemberId(groupId);
-    _setMemberId(null);
   }, [groupId]);
 
   return { memberId, setMemberId: set, clearMemberId: clear };
 }
 ```
 
-- [ ] **Step 4: PASS確認**
+> **なぜ `useEffect` + `setState` ではないのか**: 「localStorage の値を `useState` の初期値にコピーし、変化したら setState する」というパターンは React 19 で `react-hooks/no-set-state-in-effect` の lint 警告を出す。effect 本体での setState は cascading render(render → effect → setState → 再 render)を引き起こすため。`useSyncExternalStore` は外部ストアと React state を **1 段の subscribe + getSnapshot で同期**するので、不要な再 render が発生しない。
+
+- [ ] **Step 5: PASS確認**
 
 ```bash
-npx vitest run tests/lib/auth/member-storage.test.ts
+npm test                 # tests/lib/auth/member-storage.test.ts が pass
+npm run typecheck        # エラーなし
+npm run lint             # `react-hooks/no-set-state-in-effect` 警告なし
 ```
 
-- [ ] **Step 5: コミット**
+- [ ] **Step 6: コミット**
 
 ```bash
-git add frontend/lib/auth/ frontend/lib/hooks/use-member-storage.ts \
+git add frontend/lib/auth/ frontend/hooks/use-member-storage.ts \
   frontend/tests/lib/auth/
-git commit -m "feat(frontend): add localStorage-backed member identification"
+git commit -m "feat(frontend): sync member-id storage via useSyncExternalStore"
 ```
 
 ---
@@ -2250,98 +2977,137 @@ git commit -m "feat(frontend): add localStorage-backed member identification"
 ### Task 16: Frontend — Landing page(グループ作成フォーム)
 
 **Files:**
-- Modify: `frontend/app/page.tsx`(Hello画面 → 作成フォームに置き換え)
-- Create: `frontend/app/components/create-group-form.tsx`
-- Create: `frontend/lib/api/groups.ts`(API ラッパ)
 
-- [ ] **Step 1: API ラッパを実装**
+- Modify: `frontend/app/page.tsx`(Hello画面 → Landing shell に置き換え、薄い)
+- Create: `frontend/features/groups/components/create-group-form.tsx`
+- Create: `frontend/features/groups/api.ts`(API ラッパ — feature 内に閉じる)
+- Create: `frontend/features/groups/types.ts`(Group / Member 型 — 必要時)
+
+- [ ] **Step 1: API ラッパを feature 内に実装**
+
+> **kubb 生成 client を使う**: 型・スキーマ・client 関数はすべて `lib/api/gen/` に自動生成済み(Task 14)。feature 側はそれらを薄くラップし、UI が呼びやすい関数名と入力型に整える。型定義の重複は禁止 — kubb 生成型を re-export する。
 
 ```typescript
-// frontend/lib/api/groups.ts
-'use client';
-import { apiClient } from '@/lib/api-client';
+// frontend/features/groups/api.ts
+"use client";
+import { createGroupApiGroupsPost } from "@/lib/api/gen/clients/groupsController/createGroupApiGroupsPost";
+import type {
+  CreateGroupApiGroupsPostMutationRequest,
+  CreateGroupApiGroupsPostMutationResponse,
+} from "@/lib/api/gen/types/groupsController/CreateGroupApiGroupsPost";
 
-export type CreateGroupInput = {
-  name: string;
-  eventDate?: string | null;
-  memberNames: string[];
-};
+// kubb の長い型名を feature 内で短くエイリアスして UI から使いやすく
+export type CreateGroupInput = CreateGroupApiGroupsPostMutationRequest;
+export type CreateGroupResponse = CreateGroupApiGroupsPostMutationResponse;
 
-export type CreateGroupResponse = {
-  id: string;
-  name: string;
-  eventDate: string | null;
-  currency: string;
-  creatorMemberId: string | null;
-  members: { id: string; name: string }[];
-};
-
+// kubb 生成 client は data 部分を直接返す(ResponseConfig.data の中身のみ取り出した値)。
+// feature 側は薄くラップして関数名を短くするだけで、戻り値の整形は不要。
 export async function createGroup(
   input: CreateGroupInput,
 ): Promise<CreateGroupResponse> {
-  const res = await apiClient.post<CreateGroupResponse>('/api/groups', input);
-  return res.data;
+  return createGroupApiGroupsPost(input);
 }
 ```
 
-- [ ] **Step 2: フォームコンポーネント実装**
+> **import は named export**: kubb v4 は client 関数を named export(`export async function createGroupApiGroupsPost`)で出力する。`import createGroupApi from '...'`(default import)はエラーになるので注意。
+>
+> **同じパターンを Task 17-20 でも適用**: `members/api.ts`, `payments/api.ts`, `settlement/api.ts` も同じく `lib/api/gen/clients/<tag>Controller/...` の **named import** + `lib/api/gen/types/<tag>Controller/...` の型エイリアスで構成する。生成ファイル名は OpenAPI の operationId 由来で長いが、feature 側で短く別名にすれば UI が触る箇所はクリーン。
+
+- [ ] **Step 2: フォームコンポーネント実装(`useActionState`)**
+
+> **`useActionState` を採用する理由**: React 19 では「副作用のあるユーザー操作 = action」をファーストクラス概念に格上げした。`useState` + 手動の `setSubmitting`/`setError` で状態を管理するより、`useActionState` の **action 関数 = reducer** パターンに揃えたほうが:
+>
+> - `isPending` が自動で得られる(submitting state を手動管理しなくて良い)
+> - エラーと成功が同じ state(`{ error: string | null }`)に乗るので「submitting=true なのに error も出ている」のような矛盾状態が原理的に起きない
+> - action 完了時に state がアトミックに反映される(concurrent rendering でも tearing しない)
+> - 将来 Server Action 化する時に乗り換えが楽(`<form action={submit}>` にバインドするだけ)
+>
+> 入力は `members` が動的に増減する controlled inputs なので、`<form action={...}>` への直接バインド(FormData 経由)ではなく **`onSubmit` で payload を組み立てて `submit(payload)` を手動 dispatch** する形を採る。
 
 ```tsx
-// frontend/app/components/create-group-form.tsx
-'use client';
-import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+// frontend/features/groups/components/create-group-form.tsx
+"use client";
+import { useRouter } from "next/navigation";
+import { startTransition, useActionState, useState } from "react";
 
-import { createGroup } from '@/lib/api/groups';
-import { setMemberId } from '@/lib/auth/member-storage';
+import { createGroup } from "@/features/groups/api";
+import { setMemberId } from "@/lib/auth/member-storage";
+
+type FormState = { error: string | null };
 
 export function CreateGroupForm() {
   const router = useRouter();
-  const [name, setName] = useState('');
-  const [members, setMembers] = useState(['', '']);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setSubmitting(true);
-    try {
-      const memberNames = members.map((s) => s.trim()).filter((s) => s.length > 0);
-      const res = await createGroup({ name: name.trim(), memberNames });
-      if (res.creatorMemberId) {
-        setMemberId(res.id, res.creatorMemberId);
+  // 入力は controlled(state は通常通り)
+  const [name, setName] = useState("");
+  const [members, setMembers] = useState(["", ""]);
+
+  // action: 前 state と payload を受け取り、新 state を返す reducer 風関数。
+  // useActionState が内部で startTransition 相当の処理をラップしており、
+  // 呼び出し側は `submit(payload)` するだけで isPending / state が連動する。
+  const [state, submit, isPending] = useActionState<
+    FormState,
+    { name: string; memberNames: string[] }
+  >(
+    async (_prev, payload) => {
+      try {
+        const res = await createGroup(payload);
+        if (res.creatorMemberId) {
+          setMemberId(res.id, res.creatorMemberId);
+        }
+        router.push(`/g/${res.id}`);
+        return { error: null };
+      } catch (e) {
+        return { error: e instanceof Error ? e.message : String(e) };
       }
-      router.push(`/g/${res.id}`);
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setSubmitting(false);
-    }
+    },
+    { error: null },
+  );
+
+  function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const memberNames = members
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    // React 19: async action を持つ useActionState の dispatch は、form action prop か
+    // startTransition の中から呼ぶ必要がある(transition 外で呼ぶと
+    // 「An async function with useActionState was called outside of a transition」警告 +
+    // isPending が正しく更新されない)。
+    // controlled inputs + 加工 payload なので startTransition で明示的に包む。
+    startTransition(() => {
+      submit({ name: name.trim(), memberNames });
+    });
   }
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-4 max-w-md w-full">
       <label className="flex flex-col gap-1">
-        <span className="font-jp-display text-xs tracking-widest">GROUP NAME</span>
+        <span className="font-jp-display text-xs tracking-widest">
+          GROUP NAME
+        </span>
         <input
           className="border-2 border-ink p-2 bg-paper font-mono"
           value={name}
           onChange={(e) => setName(e.target.value)}
           required
           maxLength={100}
+          disabled={isPending}
         />
       </label>
 
-      <fieldset className="flex flex-col gap-1">
-        <legend className="font-jp-display text-xs tracking-widest">MEMBERS</legend>
+      <fieldset className="flex flex-col gap-1" disabled={isPending}>
+        <legend className="font-jp-display text-xs tracking-widest">
+          MEMBERS
+        </legend>
         {members.map((m, i) => (
           <input
             key={i}
             className="border-2 border-ink p-2 bg-paper font-mono"
             value={m}
             onChange={(e) =>
-              setMembers((prev) => prev.map((v, idx) => (idx === i ? e.target.value : v)))
+              setMembers((prev) =>
+                prev.map((v, idx) => (idx === i ? e.target.value : v)),
+              )
             }
             placeholder={`Member ${i + 1}`}
             maxLength={50}
@@ -2350,7 +3116,7 @@ export function CreateGroupForm() {
         <button
           type="button"
           className="font-mono text-xs underline self-start"
-          onClick={() => setMembers((p) => [...p, ''])}
+          onClick={() => setMembers((p) => [...p, ""])}
         >
           + add member
         </button>
@@ -2358,23 +3124,27 @@ export function CreateGroupForm() {
 
       <button
         type="submit"
-        disabled={submitting || !name.trim()}
+        disabled={isPending || !name.trim()}
         className="bg-ink text-paper font-display p-3 disabled:opacity-50"
       >
-        {submitting ? '...' : 'CREATE'}
+        {isPending ? "..." : "CREATE"}
       </button>
 
-      {error && <p className="text-red font-mono text-xs">{error}</p>}
+      {state.error && (
+        <p role="alert" className="text-red font-mono text-xs">
+          {state.error}
+        </p>
+      )}
     </form>
   );
 }
 ```
 
-- [ ] **Step 3: `app/page.tsx` を Landing 化**
+- [ ] **Step 3: `app/page.tsx` を Landing 化(features を呼ぶ薄い shell)**
 
 ```tsx
 // frontend/app/page.tsx
-import { CreateGroupForm } from './components/create-group-form';
+import { CreateGroupForm } from "@/features/groups/components/create-group-form";
 
 export default function Home() {
   return (
@@ -2402,7 +3172,7 @@ npm run dev
 - [ ] **Step 5: コミット**
 
 ```bash
-git add frontend/app/page.tsx frontend/app/components/ frontend/lib/api/groups.ts
+git add frontend/app/page.tsx frontend/features/groups/
 git commit -m "feat(frontend): replace landing page with create group form"
 ```
 
@@ -2410,75 +3180,68 @@ git commit -m "feat(frontend): replace landing page with create group form"
 
 ### Task 17: Frontend — `/g/[uuid]` page(メンバー選択 / ダッシュボード)
 
-**Files:**
-- Create: `frontend/app/g/[uuid]/page.tsx`
-- Create: `frontend/app/g/[uuid]/components/member-select.tsx`
-- Create: `frontend/lib/hooks/use-group.ts`
+> **配置方針**:`app/g/[uuid]/page.tsx` は **薄い shell**(routing 入口のみ)。実体である `GroupDashboard`(Section 級コンポーネント)は `features/groups/components/` に置く。これで group ロジックの import パスが Landing(Task 16)と Group ページで一貫し、また Phase 2 で /g/[uuid]/share 等が増えても dashboard の場所が動かない。
 
-- [ ] **Step 1: グループ取得 hook 実装**
+**Files:**
+
+- Create: `frontend/app/g/[uuid]/page.tsx`(薄い shell)
+- Create: `frontend/features/groups/components/group-dashboard.tsx`(主構造、Section 級)
+- Create: `frontend/features/groups/components/member-select.tsx`
+- Create: `frontend/features/groups/use-group.ts`(feature flat 配置)
+
+- [ ] **Step 1: グループ取得 hook を feature 直下に flat 実装**
+
+> **kubb 生成 client + `useTransition`**: HTTP は `getGroupApiGroupsGroupIdGet`(kubb 生成)経由。`X-Member-Id` は型付き第 2 引数として要求されるので忘れると compile error。状態同期は `useTransition` で setState を transition 内に閉じ込め、React 19 の `react-hooks/no-set-state-in-effect` 警告を回避する。
 
 ```typescript
-// frontend/lib/hooks/use-group.ts
-'use client';
-import { useEffect, useState } from 'react';
+// frontend/features/groups/use-group.ts
+"use client";
+import { useCallback, useEffect, useState, useTransition } from "react";
 
-import { apiClient } from '@/lib/api-client';
+import { getGroupApiGroupsGroupIdGet } from "@/lib/api/gen/clients/groupsController/getGroupApiGroupsGroupIdGet";
+import type { GetGroupApiGroupsGroupIdGetQueryResponse } from "@/lib/api/gen/types/groupsController/GetGroupApiGroupsGroupIdGet";
 
-export type GroupData = {
-  id: string;
-  name: string;
-  eventDate: string | null;
-  currency: string;
-  members: { id: string; name: string; createdAt: string }[];
-  payments: {
-    id: string;
-    payerId: string;
-    amount: number;
-    description: string;
-    paidAt: string;
-    source: string;
-    shares: { memberId: string; shareType: string; shareValue: number }[];
-  }[];
-};
+// kubb 生成型を feature 内で短くエイリアス。型の単一情報源は OpenAPI。
+export type GroupData = GetGroupApiGroupsGroupIdGetQueryResponse;
 
 export function useGroup(groupId: string, memberId: string | null) {
   const [data, setData] = useState<GroupData | null>(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
+  const [isPending, startTransition] = useTransition();
 
-  const reload = async () => {
+  const reload = useCallback(() => {
     if (!memberId) return;
-    setLoading(true);
-    try {
-      const res = await apiClient.get<GroupData>(`/api/groups/${groupId}`, {
-        headers: { 'X-Member-Id': memberId },
-      });
-      setData(res.data);
-      setError(null);
-    } catch (e) {
-      setError(e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    void reload();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // すべての setState を transition の async コールバック内に閉じ込める。
+    // → effect 本体で setState が同期的に走らず、lint 警告が出ない。
+    startTransition(async () => {
+      try {
+        const res = await getGroupApiGroupsGroupIdGet(groupId, {
+          "X-Member-Id": memberId,
+        });
+        setData(res);
+        setError(null);
+      } catch (e) {
+        setError(e);
+      }
+    });
   }, [groupId, memberId]);
 
-  return { data, loading, error, reload };
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  return { data, isPending, error, reload };
 }
 ```
 
 - [ ] **Step 2: member-select コンポーネント実装**
 
 ```tsx
-// frontend/app/g/[uuid]/components/member-select.tsx
-'use client';
-import { useState } from 'react';
+// frontend/features/groups/components/member-select.tsx
+"use client";
+import { startTransition, useActionState, useState } from "react";
 
-import { apiClient } from '@/lib/api-client';
+import { addMemberApiGroupsGroupIdMembersPost } from "@/lib/api/gen/clients/membersController/addMemberApiGroupsGroupIdMembersPost";
 
 type Props = {
   groupId: string;
@@ -2486,32 +3249,50 @@ type Props = {
   onSelect: (memberId: string) => void;
 };
 
-export function MemberSelect({ groupId, members, onSelect }: Props) {
-  const [newName, setNewName] = useState('');
-  const [adding, setAdding] = useState(false);
+type AddState = { error: string | null };
 
-  async function addMember() {
-    if (!newName.trim()) return;
-    setAdding(true);
-    try {
-      // 「あなたは誰?」の段階ではまだ X-Member-Id が無い → 暫定で 1 人目の id を借りる戦略
-      // MVP では members[0] を一時的な actor として使う(設計書 §6.3 のハイブリッド)
+export function MemberSelect({ groupId, members, onSelect }: Props) {
+  const [newName, setNewName] = useState("");
+
+  const [state, addMember, isPending] = useActionState<AddState, string>(
+    async (_prev, name) => {
+      // 「あなたは誰?」の段階ではまだ X-Member-Id が無い → 暫定で 1 人目の id を借りる戦略。
+      // MVP では members[0] を一時的な actor として使う(設計書 §6.3 のハイブリッド)。
       const actor = members[0]?.id;
       if (!actor) {
-        // メンバーが 1 人もいない初期状態(memberNames=[] で作成したケース)
-        // POST /members は X-Member-Id 必須なので、Phase 5 で「初回限定の wildcard」を検討
-        alert('No initial member exists. Use the create form to add at least one.');
-        return;
+        // メンバーが 1 人もいない初期状態(memberNames=[] で作成したケース)。
+        // POST /members は X-Member-Id 必須なので、Phase 5 で「初回限定の wildcard」を検討。
+        return {
+          error:
+            "初期メンバーが居ません。Landing からメンバー名を 1 名以上入れて作成し直してください。",
+        };
       }
-      const res = await apiClient.post<{ id: string; name: string }>(
-        `/api/groups/${groupId}/members`,
-        { name: newName.trim() },
-        { headers: { 'X-Member-Id': actor } },
-      );
-      onSelect(res.data.id);
-    } finally {
-      setAdding(false);
-    }
+      try {
+        // kubb は OpenAPI の Header パラメータ(X-Member-Id)を第 3 positional 引数として独立させる。
+        // axios config の `headers` ではなく直接ヘッダオブジェクトを渡す。
+        const res = await addMemberApiGroupsGroupIdMembersPost(
+          groupId,
+          { name },
+          { "X-Member-Id": actor },
+        );
+        onSelect(res.id);
+        setNewName("");
+        return { error: null };
+      } catch (e) {
+        return { error: e instanceof Error ? e.message : String(e) };
+      }
+    },
+    { error: null },
+  );
+
+  function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = newName.trim();
+    if (!trimmed) return;
+    // React 19: async action の dispatch は startTransition 内から呼ぶ
+    startTransition(() => {
+      addMember(trimmed);
+    });
   }
 
   return (
@@ -2525,6 +3306,7 @@ export function MemberSelect({ groupId, members, onSelect }: Props) {
               <button
                 onClick={() => onSelect(m.id)}
                 className="border-2 border-ink p-2 w-full text-left font-mono"
+                disabled={isPending}
               >
                 {m.name}
               </button>
@@ -2533,49 +3315,56 @@ export function MemberSelect({ groupId, members, onSelect }: Props) {
         </ul>
       )}
 
-      <div className="border-t border-rule-grey pt-3 flex flex-col gap-2">
+      <form
+        onSubmit={onSubmit}
+        className="border-t border-rule-grey pt-3 flex flex-col gap-2"
+      >
         <p className="font-mono text-xs">いない場合は新規追加:</p>
         <input
           className="border-2 border-ink p-2 bg-paper font-mono"
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
           maxLength={50}
+          disabled={isPending}
         />
         <button
-          onClick={addMember}
-          disabled={adding || !newName.trim()}
+          type="submit"
+          disabled={isPending || !newName.trim()}
           className="bg-ink text-paper font-display p-2 disabled:opacity-50"
         >
-          ADD ME
+          {isPending ? "..." : "ADD ME"}
         </button>
-      </div>
+        {state.error && (
+          <p role="alert" className="text-red font-mono text-xs">
+            {state.error}
+          </p>
+        )}
+      </form>
     </div>
   );
 }
 ```
 
-- [ ] **Step 3: page.tsx 実装**
+> **`addMemberApiGroupsGroupIdMembersPost` を直接使うか、wrapper を作るか**: ここでは kubb 生成 client を直接呼んでいる。Task 16 のように `features/groups/api.ts` に薄いラッパを作ってもよいが、本コンポーネントは「初期 actor 借用」という特殊な認可ロジックを内包しているため、wrapper にしても再利用性は低い。直呼び出しで OK。
+
+- [ ] **Step 3: GroupDashboard 実装(主構造、Section 級)**
 
 ```tsx
-// frontend/app/g/[uuid]/page.tsx
-'use client';
-import { use } from 'react';
+// frontend/features/groups/components/group-dashboard.tsx
+"use client";
 
-import { useGroup } from '@/lib/hooks/use-group';
-import { useMemberStorage } from '@/lib/hooks/use-member-storage';
+import { useGroup } from "@/features/groups/use-group";
+import { useMemberStorage } from "@/hooks/use-member-storage";
 
-import { MemberSelect } from './components/member-select';
-// 後の Task で追加されるコンポーネント
-// import { PaymentForm } from './components/payment-form';
-// import { PaymentList } from './components/payment-list';
-// import { SettlementView } from './components/settlement-view';
+import { MemberSelect } from "./member-select";
+// 後の Task で追加されるコンポーネント:
+// import { PaymentForm } from '@/features/payments/components/payment-form';
+// import { PaymentList } from '@/features/payments/components/payment-list';
+// import { SettlementView } from '@/features/settlement/components/settlement-view';
 
-export default function GroupPage({
-  params,
-}: {
-  params: Promise<{ uuid: string }>;
-}) {
-  const { uuid: groupId } = use(params);
+type Props = { groupId: string };
+
+export function GroupDashboard({ groupId }: Props) {
   const { memberId, setMemberId } = useMemberStorage(groupId);
   const { data, loading, reload } = useGroup(groupId, memberId);
 
@@ -2625,14 +3414,32 @@ export default function GroupPage({
 }
 ```
 
+- [ ] **Step 4: page.tsx は薄い routing shell として実装**
+
+```tsx
+// frontend/app/g/[uuid]/page.tsx
+import { use } from "react";
+
+import { GroupDashboard } from "@/features/groups/components/group-dashboard";
+
+export default function GroupPage({
+  params,
+}: {
+  params: Promise<{ uuid: string }>;
+}) {
+  const { uuid } = use(params);
+  return <GroupDashboard groupId={uuid} />;
+}
+```
+
 > **Phase 1 の `useGroup` 制約**:`GET /api/groups/{id}` は `X-Member-Id` 必須なので、メンバー未選択時は呼べない。member 選択画面で表示するメンバー一覧は本来別経路(public 取得)で取るべき。MVP では「URL を共有された先で member_names が知られている」前提で、初回アクセス時は `data` が空でも MemberSelect を表示し、新規追加できるようにする。Phase 5 で public な GET を追加するか、認可方針を見直す。
 
-- [ ] **Step 4: 動作確認(Task 16 で作成したグループに遷移できること)**
+- [ ] **Step 5: 動作確認(Task 16 で作成したグループに遷移できること)**
 
-- [ ] **Step 5: コミット**
+- [ ] **Step 6: コミット**
 
 ```bash
-git add frontend/app/g/ frontend/lib/hooks/use-group.ts
+git add frontend/app/g/ frontend/features/groups/
 git commit -m "feat(frontend): add /g/[uuid] page with member selection"
 ```
 
@@ -2641,57 +3448,67 @@ git commit -m "feat(frontend): add /g/[uuid] page with member selection"
 ### Task 18: Frontend — Payment Form(支払い入力)
 
 **Files:**
-- Create: `frontend/app/g/[uuid]/components/payment-form.tsx`
-- Modify: `frontend/app/g/[uuid]/page.tsx`(form を組み込み)
-- Create: `frontend/lib/api/payments.ts`
 
-- [ ] **Step 1: API ラッパ**
+- Create: `frontend/features/payments/api.ts`
+- Create: `frontend/features/payments/components/payment-form.tsx`
+- Create: `frontend/features/payments/types.ts`(必要時)
+- Modify: `frontend/features/groups/components/group-dashboard.tsx`(form を組み込み)
+
+- [ ] **Step 1: API ラッパ(payments feature 内)**
+
+> **kubb 生成 client を使う**: backend の OpenAPI に存在する endpoint なので、Task 14 のルール通り `lib/api/gen/clients/...` 経由で呼ぶ。型は OpenAPI から再生成されるので、自前定義しない。`X-Member-Id` は kubb の Header 規約により第 3 positional 引数として渡す。
 
 ```typescript
-// frontend/lib/api/payments.ts
-'use client';
-import { apiClient } from '@/lib/api-client';
+// frontend/features/payments/api.ts
+"use client";
 
-export type CreatePaymentInput = {
-  payerId: string;
-  amount: number;
-  description: string;
-  paidAt?: string;
-  shares: { memberId: string; shareType: 'equal' | 'amount'; shareValue: number }[];
-};
+import { createPaymentApiGroupsGroupIdPaymentsPost } from "@/lib/api/gen/clients/paymentsController/createPaymentApiGroupsGroupIdPaymentsPost";
+import { deletePaymentApiGroupsGroupIdPaymentsPaymentIdDelete } from "@/lib/api/gen/clients/paymentsController/deletePaymentApiGroupsGroupIdPaymentsPaymentIdDelete";
+import type {
+  CreatePaymentApiGroupsGroupIdPaymentsPostMutationRequest,
+  CreatePaymentApiGroupsGroupIdPaymentsPostMutationResponse,
+} from "@/lib/api/gen/types/paymentsController/CreatePaymentApiGroupsGroupIdPaymentsPost";
+
+// kubb の長い型名を feature 内で短くエイリアスして UI から使いやすく。
+// 型の単一情報源は OpenAPI(backend)→ 重複定義しない。
+export type CreatePaymentInput =
+  CreatePaymentApiGroupsGroupIdPaymentsPostMutationRequest;
+export type CreatePaymentResponse =
+  CreatePaymentApiGroupsGroupIdPaymentsPostMutationResponse;
 
 export async function createPayment(
   groupId: string,
   memberId: string,
   input: CreatePaymentInput,
-) {
-  const res = await apiClient.post(
-    `/api/groups/${groupId}/payments`,
-    input,
-    { headers: { 'X-Member-Id': memberId } },
-  );
-  return res.data;
+): Promise<CreatePaymentResponse> {
+  return createPaymentApiGroupsGroupIdPaymentsPost(groupId, input, {
+    "X-Member-Id": memberId,
+  });
 }
 
 export async function deletePayment(
   paymentId: string,
   groupId: string,
   memberId: string,
-) {
-  await apiClient.delete(`/api/payments/${paymentId}`, {
-    headers: { 'X-Member-Id': memberId, 'X-Group-Id': groupId },
-  });
+): Promise<void> {
+  await deletePaymentApiGroupsGroupIdPaymentsPaymentIdDelete(
+    groupId,
+    paymentId,
+    { "X-Member-Id": memberId },
+  );
 }
 ```
 
-- [ ] **Step 2: PaymentForm 実装**
+- [ ] **Step 2: PaymentForm 実装(`useActionState`)**
+
+> **Task 16 と同じ `useActionState` パターン**を踏襲。submit 中のペンディング状態 + エラーメッセージを 1 つの reducer 関数に集約する。
 
 ```tsx
-// frontend/app/g/[uuid]/components/payment-form.tsx
-'use client';
-import { useState } from 'react';
+// frontend/features/payments/components/payment-form.tsx
+"use client";
+import { startTransition, useActionState, useState } from "react";
 
-import { createPayment } from '@/lib/api/payments';
+import { createPayment } from "@/features/payments/api";
 
 type Member = { id: string; name: string };
 
@@ -2702,34 +3519,52 @@ type Props = {
   onCreated: () => void;
 };
 
+type FormState = { error: string | null };
+
+type Payload = {
+  payerId: string;
+  amount: number;
+  description: string;
+};
+
 export function PaymentForm({ groupId, memberId, members, onCreated }: Props) {
   const [payerId, setPayerId] = useState(memberId);
-  const [amount, setAmount] = useState('');
-  const [description, setDescription] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+  const [amount, setAmount] = useState("");
+  const [description, setDescription] = useState("");
 
-  async function onSubmit(e: React.FormEvent) {
+  const [state, submit, isPending] = useActionState<FormState, Payload>(
+    async (_prev, payload) => {
+      try {
+        await createPayment(groupId, memberId, {
+          payerId: payload.payerId,
+          amount: payload.amount,
+          description: payload.description,
+          shares: members.map((m) => ({
+            memberId: m.id,
+            shareType: "equal",
+            shareValue: 1.0,
+          })),
+        });
+        // 成功: 入力欄をリセットして親に通知
+        setAmount("");
+        setDescription("");
+        onCreated();
+        return { error: null };
+      } catch (e) {
+        return { error: e instanceof Error ? e.message : String(e) };
+      }
+    },
+    { error: null },
+  );
+
+  function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     const amt = Number(amount);
     if (!Number.isInteger(amt) || amt <= 0) return;
-    setSubmitting(true);
-    try {
-      await createPayment(groupId, memberId, {
-        payerId,
-        amount: amt,
-        description,
-        shares: members.map((m) => ({
-          memberId: m.id,
-          shareType: 'equal',
-          shareValue: 1.0,
-        })),
-      });
-      setAmount('');
-      setDescription('');
-      onCreated();
-    } finally {
-      setSubmitting(false);
-    }
+    // React 19: async action の dispatch は startTransition 内から呼ぶ
+    startTransition(() => {
+      submit({ payerId, amount: amt, description });
+    });
   }
 
   return (
@@ -2739,43 +3574,45 @@ export function PaymentForm({ groupId, memberId, members, onCreated }: Props) {
     >
       <h3 className="font-jp-display text-sm tracking-widest">PAYMENT</h3>
 
-      <label className="flex flex-col gap-1">
-        <span className="font-mono text-xs">PAYER</span>
-        <select
-          value={payerId}
-          onChange={(e) => setPayerId(e.target.value)}
-          className="border-2 border-ink p-1 bg-paper font-mono"
-        >
-          {members.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.name}
-            </option>
-          ))}
-        </select>
-      </label>
+      <fieldset className="contents" disabled={isPending}>
+        <label className="flex flex-col gap-1">
+          <span className="font-mono text-xs">PAYER</span>
+          <select
+            value={payerId}
+            onChange={(e) => setPayerId(e.target.value)}
+            className="border-2 border-ink p-1 bg-paper font-mono"
+          >
+            {members.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+          </select>
+        </label>
 
-      <label className="flex flex-col gap-1">
-        <span className="font-mono text-xs">AMOUNT (JPY)</span>
-        <input
-          type="number"
-          inputMode="numeric"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          className="border-2 border-ink p-1 bg-paper font-mono"
-          required
-          min={1}
-        />
-      </label>
+        <label className="flex flex-col gap-1">
+          <span className="font-mono text-xs">AMOUNT (JPY)</span>
+          <input
+            type="number"
+            inputMode="numeric"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            className="border-2 border-ink p-1 bg-paper font-mono"
+            required
+            min={1}
+          />
+        </label>
 
-      <label className="flex flex-col gap-1">
-        <span className="font-mono text-xs">DESCRIPTION</span>
-        <input
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          className="border-2 border-ink p-1 bg-paper font-mono"
-          maxLength={500}
-        />
-      </label>
+        <label className="flex flex-col gap-1">
+          <span className="font-mono text-xs">DESCRIPTION</span>
+          <input
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            className="border-2 border-ink p-1 bg-paper font-mono"
+            maxLength={500}
+          />
+        </label>
+      </fieldset>
 
       <p className="font-mono text-xs text-rule-grey">
         Phase 1 は均等割固定。比率/金額指定は Phase 1 終盤で追加。
@@ -2783,22 +3620,28 @@ export function PaymentForm({ groupId, memberId, members, onCreated }: Props) {
 
       <button
         type="submit"
-        disabled={submitting}
+        disabled={isPending}
         className="bg-ink text-paper font-display p-2 disabled:opacity-50"
       >
-        {submitting ? '...' : 'ADD'}
+        {isPending ? "..." : "ADD"}
       </button>
+
+      {state.error && (
+        <p role="alert" className="text-red font-mono text-xs">
+          {state.error}
+        </p>
+      )}
     </form>
   );
 }
 ```
 
-- [ ] **Step 3: page.tsx に組み込み**
+- [ ] **Step 3: GroupDashboard に組み込み**
 
-`page.tsx` のダッシュボード部分を以下に差し替え:
+`features/groups/components/group-dashboard.tsx` のダッシュボード部分(loading 後の `<main>` 内)に追加:
 
 ```tsx
-import { PaymentForm } from './components/payment-form';
+import { PaymentForm } from "@/features/payments/components/payment-form";
 ...
 <section className="flex flex-col gap-4">
   <PaymentForm
@@ -2813,7 +3656,7 @@ import { PaymentForm } from './components/payment-form';
 - [ ] **Step 4: 動作確認 + コミット**
 
 ```bash
-git add frontend/app/g/ frontend/lib/api/payments.ts
+git add frontend/features/
 git commit -m "feat(frontend): add payment input form (equal split MVP)"
 ```
 
@@ -2822,17 +3665,22 @@ git commit -m "feat(frontend): add payment input form (equal split MVP)"
 ### Task 19: Frontend — Payment List(支払い一覧 + 削除)
 
 **Files:**
-- Create: `frontend/app/g/[uuid]/components/payment-list.tsx`
-- Modify: `frontend/app/g/[uuid]/page.tsx`
+
+- Create: `frontend/features/payments/components/payment-list.tsx`
+- Modify: `frontend/features/groups/components/group-dashboard.tsx`
 
 - [ ] **Step 1: PaymentList 実装**
 
-```tsx
-// frontend/app/g/[uuid]/components/payment-list.tsx
-'use client';
-import { useState } from 'react';
+> **per-item 操作で `useActionState` を使わない理由**: Task 16/18 のフォームと違い、削除は **リストの各アイテム個別の操作**で「どの id が処理中か」の UI 表示が要る。`useActionState` の `isPending` は単一 boolean なので「どの行が pending か」を表現できず、別途 state が必要になる。シンプルに `useState<string | null>` で deletingId を持つ方が直接的。
+>
+> **代替案**: React 19 では各 `<form action={...}>` を独立に走らせると別々に pending 管理できるので、行単位で `<form>` を作って `<button formAction={dispatch}>` でも書ける。ただし confirm ダイアログを挟む現状の UX には不要な抽象化なので、本 plan では採用しない。
 
-import { deletePayment } from '@/lib/api/payments';
+```tsx
+// frontend/features/payments/components/payment-list.tsx
+"use client";
+import { useState, useTransition } from "react";
+
+import { deletePayment } from "@/features/payments/api";
 
 type Payment = {
   id: string;
@@ -2852,20 +3700,34 @@ type Props = {
   onChange: () => void;
 };
 
-export function PaymentList({ groupId, memberId, members, payments, onChange }: Props) {
+export function PaymentList({
+  groupId,
+  memberId,
+  members,
+  payments,
+  onChange,
+}: Props) {
   const memberName = (id: string) =>
-    members.find((m) => m.id === id)?.name ?? '?';
-  const [deleting, setDeleting] = useState<string | null>(null);
+    members.find((m) => m.id === id)?.name ?? "?";
 
-  async function onDelete(paymentId: string) {
-    if (!confirm('この支払いを削除しますか?')) return;
-    setDeleting(paymentId);
-    try {
-      await deletePayment(paymentId, groupId, memberId);
-      onChange();
-    } finally {
-      setDeleting(null);
-    }
+  // 「どの id が削除処理中か」を追跡(per-item pending 表示のため)。
+  // useTransition で startTransition を併用することで concurrent rendering 安全に
+  // setDeleting と onChange の更新をまとめる。
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  function onDelete(paymentId: string) {
+    if (!confirm("この支払いを削除しますか?")) return;
+    setDeletingId(paymentId);
+    startTransition(async () => {
+      try {
+        // 引数順は (groupId, paymentId, memberId) — URL path 順と一致
+        await deletePayment(groupId, paymentId, memberId);
+        onChange();
+      } finally {
+        setDeletingId(null);
+      }
+    });
   }
 
   if (payments.length === 0) {
@@ -2875,21 +3737,30 @@ export function PaymentList({ groupId, memberId, members, payments, onChange }: 
   return (
     <ul className="flex flex-col divide-y divide-rule-grey">
       {payments.map((p) => (
-        <li key={p.id} className="py-2 flex items-baseline justify-between gap-2">
+        <li
+          key={p.id}
+          className="py-2 flex items-baseline justify-between gap-2"
+        >
           <div className="flex flex-col">
-            <span className="font-jp-display text-sm">{p.description || '(no description)'}</span>
+            <span className="font-jp-display text-sm">
+              {p.description || "(no description)"}
+            </span>
             <span className="font-mono text-xs text-rule-grey">
-              {memberName(p.payerId)} · {new Date(p.paidAt).toLocaleDateString('ja-JP')}
+              {memberName(p.payerId)} ·{" "}
+              {new Date(p.paidAt).toLocaleDateString("ja-JP")}
             </span>
           </div>
           <div className="flex items-baseline gap-3">
-            <span className="font-mono text-base">¥{p.amount.toLocaleString()}</span>
+            <span className="font-mono text-base">
+              ¥{p.amount.toLocaleString()}
+            </span>
             <button
               onClick={() => onDelete(p.id)}
-              disabled={deleting === p.id}
+              // 別行の削除中は他の行も無効化(連続クリック誤操作防止)
+              disabled={isPending}
               className="font-mono text-xs underline text-rule-grey"
             >
-              {deleting === p.id ? '...' : 'delete'}
+              {deletingId === p.id ? "..." : "delete"}
             </button>
           </div>
         </li>
@@ -2899,10 +3770,12 @@ export function PaymentList({ groupId, memberId, members, payments, onChange }: 
 }
 ```
 
-- [ ] **Step 2: page.tsx に組み込み + コミット**
+- [ ] **Step 2: GroupDashboard に組み込み + コミット**
+
+`features/groups/components/group-dashboard.tsx` の `<main>` 内に追加:
 
 ```tsx
-import { PaymentList } from './components/payment-list';
+import { PaymentList } from "@/features/payments/components/payment-list";
 ...
 <PaymentList
   groupId={groupId}
@@ -2910,11 +3783,11 @@ import { PaymentList } from './components/payment-list';
   members={data.members}
   payments={data.payments}
   onChange={reload}
-/>
+/>;
 ```
 
 ```bash
-git add frontend/app/g/
+git add frontend/features/
 git commit -m "feat(frontend): add payment list with soft delete"
 ```
 
@@ -2923,42 +3796,44 @@ git commit -m "feat(frontend): add payment list with soft delete"
 ### Task 20: Frontend — Settlement View(清算結果)
 
 **Files:**
-- Create: `frontend/app/g/[uuid]/components/settlement-view.tsx`
-- Create: `frontend/lib/api/settlement.ts`
-- Modify: `frontend/app/g/[uuid]/page.tsx`
 
-- [ ] **Step 1: API ラッパ**
+- Create: `frontend/features/settlement/api.ts`
+- Create: `frontend/features/settlement/components/settlement-view.tsx`
+- Create: `frontend/features/settlement/types.ts`(必要時)
+- Modify: `frontend/features/groups/components/group-dashboard.tsx`(統合最終形)
+
+- [ ] **Step 1: API ラッパ(settlement feature 内)**
 
 ```typescript
-// frontend/lib/api/settlement.ts
-'use client';
-import { apiClient } from '@/lib/api-client';
+// frontend/features/settlement/api.ts
+"use client";
 
-export type Settlement = {
-  transfers: { fromId: string; toId: string; amount: number }[];
-  netBalances: Record<string, number>;
-};
+import { getSettlementApiGroupsGroupIdSettlementGet } from "@/lib/api/gen/clients/settlementController/getSettlementApiGroupsGroupIdSettlementGet";
+import type { GetSettlementApiGroupsGroupIdSettlementGetQueryResponse } from "@/lib/api/gen/types/settlementController/GetSettlementApiGroupsGroupIdSettlementGet";
+
+// kubb 生成型を feature 内で短くエイリアス。型の単一情報源は OpenAPI(backend)。
+export type Settlement = GetSettlementApiGroupsGroupIdSettlementGetQueryResponse;
 
 export async function getSettlement(
   groupId: string,
   memberId: string,
 ): Promise<Settlement> {
-  const res = await apiClient.get<Settlement>(
-    `/api/groups/${groupId}/settlement`,
-    { headers: { 'X-Member-Id': memberId } },
-  );
-  return res.data;
+  return getSettlementApiGroupsGroupIdSettlementGet(groupId, {
+    "X-Member-Id": memberId,
+  });
 }
 ```
 
 - [ ] **Step 2: コンポーネント**
 
-```tsx
-// frontend/app/g/[uuid]/components/settlement-view.tsx
-'use client';
-import { useEffect, useState } from 'react';
+> **`useTransition` で状態同期**: `useGroup`(Task 17)と同じく、setState を transition の async コールバック内に閉じ込めて React 19 の `react-hooks/no-set-state-in-effect` 警告を回避。`isPending` で再 fetch 中のフラグを表現する。
 
-import { getSettlement, type Settlement } from '@/lib/api/settlement';
+```tsx
+// frontend/features/settlement/components/settlement-view.tsx
+"use client";
+import { useCallback, useEffect, useState, useTransition } from "react";
+
+import { getSettlement, type Settlement } from "@/features/settlement/api";
 
 type Member = { id: string; name: string };
 
@@ -2969,20 +3844,37 @@ type Props = {
   refreshKey: number;
 };
 
-export function SettlementView({ groupId, memberId, members, refreshKey }: Props) {
+export function SettlementView({
+  groupId,
+  memberId,
+  members,
+  refreshKey,
+}: Props) {
   const [data, setData] = useState<Settlement | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<unknown>(null);
+  const [isPending, startTransition] = useTransition();
+
+  const reload = useCallback(() => {
+    startTransition(async () => {
+      try {
+        const res = await getSettlement(groupId, memberId);
+        setData(res);
+        setError(null);
+      } catch (e) {
+        setError(e);
+      }
+    });
+  }, [groupId, memberId]);
 
   useEffect(() => {
-    setLoading(true);
-    getSettlement(groupId, memberId)
-      .then(setData)
-      .finally(() => setLoading(false));
-  }, [groupId, memberId, refreshKey]);
+    reload();
+  }, [reload, refreshKey]);
 
-  const name = (id: string) => members.find((m) => m.id === id)?.name ?? '?';
+  const name = (id: string) => members.find((m) => m.id === id)?.name ?? "?";
 
-  if (loading) return <p className="font-mono text-xs">loading...</p>;
+  // 初回ロードのみ skeleton を出し、再 fetch 中は古いデータを表示し続ける(stale-while-revalidate)
+  if (isPending && !data) return <p className="font-mono text-xs">loading...</p>;
+  if (error) return <p className="font-mono text-xs text-red">error: {String(error)}</p>;
   if (!data) return null;
 
   return (
@@ -3006,7 +3898,7 @@ export function SettlementView({ groupId, memberId, members, refreshKey }: Props
         <ul>
           {Object.entries(data.netBalances).map(([mid, bal]) => (
             <li key={mid}>
-              {name(mid)}: {bal > 0 ? '+' : ''}
+              {name(mid)}: {bal > 0 ? "+" : ""}
               {bal.toLocaleString()}
             </li>
           ))}
@@ -3017,28 +3909,26 @@ export function SettlementView({ groupId, memberId, members, refreshKey }: Props
 }
 ```
 
-- [ ] **Step 3: page.tsx 統合**
+- [ ] **Step 3: GroupDashboard を最終形に更新**
 
-`page.tsx` の最終形:
+`features/groups/components/group-dashboard.tsx` を以下に更新(全 feature を組み込んだ最終形):
 
 ```tsx
-'use client';
-import { use, useState } from 'react';
+// frontend/features/groups/components/group-dashboard.tsx
+"use client";
+import { useState } from "react";
 
-import { useGroup } from '@/lib/hooks/use-group';
-import { useMemberStorage } from '@/lib/hooks/use-member-storage';
+import { useGroup } from "@/features/groups/use-group";
+import { PaymentForm } from "@/features/payments/components/payment-form";
+import { PaymentList } from "@/features/payments/components/payment-list";
+import { SettlementView } from "@/features/settlement/components/settlement-view";
+import { useMemberStorage } from "@/hooks/use-member-storage";
 
-import { MemberSelect } from './components/member-select';
-import { PaymentForm } from './components/payment-form';
-import { PaymentList } from './components/payment-list';
-import { SettlementView } from './components/settlement-view';
+import { MemberSelect } from "./member-select";
 
-export default function GroupPage({
-  params,
-}: {
-  params: Promise<{ uuid: string }>;
-}) {
-  const { uuid: groupId } = use(params);
+type Props = { groupId: string };
+
+export function GroupDashboard({ groupId }: Props) {
   const { memberId, setMemberId } = useMemberStorage(groupId);
   const { data, loading, reload } = useGroup(groupId, memberId);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -3103,9 +3993,12 @@ export default function GroupPage({
 }
 ```
 
+> `app/g/[uuid]/page.tsx` は Task 17 で作成した薄い shell のまま変更不要(`<GroupDashboard groupId={uuid} />` を呼ぶだけ)。Task 18-20 のフィーチャ追加は、すべて `GroupDashboard` 内の import / 配置で完結する。
+
 - [ ] **Step 4: 動作確認(コア体験を E2E で確認)**
 
 ローカルで以下のシナリオを手動実行:
+
 1. `npm run dev`(frontend)+ `uv run uvicorn app.main:app --reload`(backend)
 2. http://localhost:3000 → グループ作成「テスト飲み会」、メンバー A, B, C
 3. → `/g/<uuid>` 自動遷移、creator(A) の id が localStorage に保存されている
@@ -3116,7 +4009,7 @@ export default function GroupPage({
 - [ ] **Step 5: コミット**
 
 ```bash
-git add frontend/app/g/ frontend/lib/api/settlement.ts
+git add frontend/features/
 git commit -m "feat(frontend): add settlement view (transfer list + net balances)"
 ```
 
@@ -3148,6 +4041,7 @@ npm run lint && npm run format:check && npm run typecheck && npm test && npm run
 cd backend
 flyctl ssh console -a splai-backend -C "uv run alembic upgrade head"
 ```
+
 期待出力: `Running upgrade ... -> <rev>, create core tables`
 
 > Fly.io コンテナ内で `.venv` が存在し、DATABASE_URL は secrets 経由で注入されている前提。`flyctl ssh console` セッション内で `cd /app && uv run alembic upgrade head` でも可。
@@ -3223,8 +4117,8 @@ git push origin develop
 - [ ] グループ作成(`POST /api/groups`)— Task 6
 - [ ] メンバー登録(作成時 + 後追加)— Task 6, 8
 - [ ] 手動支払い登録(`POST /api/groups/{id}/payments`)— Task 9
-- [ ] 支払い編集(`PATCH /api/payments/{id}`)— Task 10
-- [ ] 支払い論理削除(`DELETE /api/payments/{id}`)— Task 11
+- [ ] 支払い編集(`PATCH /api/groups/{group_id}/payments/{id}`)— Task 10
+- [ ] 支払い論理削除(`DELETE /api/groups/{group_id}/payments/{id}`)— Task 11
 - [ ] 支払い一覧表示(GET /api/groups/{id} の payments フィールド経由)— Task 7, 19
 - [ ] 清算結果計算(貪欲法)と表示 — Task 3, 12, 20
 - [ ] X-Member-Id 認可ミドルウェア — Task 4
@@ -3243,6 +4137,7 @@ git push origin develop
 ## このフェーズで作成する成果物まとめ
 
 ### Backend
+
 - ✅ 4 テーブル(groups / members / payments / payment_shares)+ Alembic マイグレーション
 - ✅ 6 本の REST エンドポイント(POST /api/groups, GET /api/groups/{id}, POST /members, POST/PATCH/DELETE /payments, GET /settlement)
 - ✅ X-Member-Id `Depends()` 認可
@@ -3250,6 +4145,7 @@ git push origin develop
 - ✅ Pydantic CamelModel スキーマ(Request / Response)
 
 ### Frontend
+
 - ✅ Landing(グループ作成フォーム)
 - ✅ /g/[uuid] dashboard(メンバー選択 / 支払い入力 / 一覧 / 清算)
 - ✅ localStorage ベースのメンバー識別
@@ -3257,6 +4153,7 @@ git push origin develop
 - ✅ OpenAPI → Zod 自動生成
 
 ### インフラ
+
 - ✅ Fly.io への migration 適用フロー
 - ✅ Vercel preview / production の自動連動
 

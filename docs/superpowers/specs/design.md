@@ -81,6 +81,105 @@
 | IBM CA API     | チャット入力解析、文章生成、清算解説       |
 | GCP Vision API | レシートOCR                                |
 
+### Backend 内部レイヤ構造
+
+FastAPI の内部は **4 層**に分け、各層の責務を厳格に分離する。Router にビジネスロジックや DB 操作を直接書かない。
+
+```
+HTTP request
+    ↓
+┌─────────────────────────────────────────────────────────────┐
+│ Router         app/api/<resource>.py                         │  ← HTTP I/O のみ
+│   - HTTP request / response binding                          │
+│   - 認可(Depends(require_member))                          │
+│   - ORM model → Pydantic response の DTO 変換                │
+│   - ビジネスルールや SQL を書かない                          │
+└─────────────────────────────────────────────────────────────┘
+    ↓ プリミティブ + AsyncSession
+┌─────────────────────────────────────────────────────────────┐
+│ Service        app/services/<domain>.py                      │  ← orchestration
+│   - DB 読み書き(AsyncSession を引数で受け取る)             │
+│   - 外部 API 呼び出し(IBM CA, GCP Vision)                  │
+│   - トランザクション境界(commit / rollback)                │
+│   - 複数エンティティの atomic 作成・更新                     │
+│   - ビジネスルール(「先頭メンバーが作成者」等)             │
+│   - Pydantic schema には依存しない(ORM model を返す)       │
+└─────────────────────────────────────────────────────────────┘
+    ↓ ORM model / プリミティブ
+┌─────────────────────────────────────────────────────────────┐
+│ Utils          app/utils/<topic>.py                          │  ← pure functions
+│   - 入出力なしの純粋関数(同じ入力 → 同じ出力)              │
+│   - 清算最適化アルゴリズム、金額計算、フォーマット等         │
+│   - AsyncSession・httpx などの side-effect 依存を持たない    │
+│   - フレームワーク非依存(将来 CLI からも呼べる)            │
+└─────────────────────────────────────────────────────────────┘
+
+並行レイヤ(全層が参照可)
+┌─────────────────┐  ┌─────────────────┐
+│ Models          │  │ Schemas         │
+│ app/models/     │  │ app/schemas/    │
+│ SQLAlchemy 定義 │  │ Pydantic DTO    │
+│ FK / Index      │  │ camelCase 変換  │
+└─────────────────┘  └─────────────────┘
+```
+
+#### `services/` と `utils/` の判断フロー
+
+```
+新しいロジックを追加するとき
+    │
+    ▼
+┌─────────────────────────────────┐
+│ DB / 外部 API / I/O を触るか?   │
+└─────────┬────────────────┬──────┘
+          │ Yes            │ No
+          ▼                ▼
+   app/services/     app/utils/
+   (orchestration)   (pure function)
+```
+
+| 例                                    | 配置                           |
+| ------------------------------------- | ------------------------------ |
+| 清算アルゴリズム(貪欲法、付録 A)     | `app/utils/settlement.py`      |
+| 金額フォーマット、消費税計算          | `app/utils/format.py`          |
+| グループ + 初期メンバーの atomic 作成 | `app/services/groups.py`       |
+| 支払い + shares の atomic 登録        | `app/services/payments.py`     |
+| IBM CA API 呼び出し中継               | `app/services/ai_gateway.py`   |
+| GCP Vision API 呼び出し               | `app/services/ocr_gateway.py`  |
+
+#### 役割分担の例(POST /api/groups)
+
+```python
+# app/api/groups.py — Router(HTTP I/O + DTO のみ)
+@router.post("", status_code=201, response_model=GroupResponse)
+async def create_group(body: CreateGroupRequest, db: AsyncSession = Depends(get_session)):
+    group, members = await groups_service.create_group_with_initial_members(
+        db, name=body.name, event_date=body.event_date, member_names=body.member_names
+    )
+    return GroupResponse(  # ← ORM → Pydantic 変換は router の仕事
+        id=group.id, name=group.name, ...,
+        creator_member_id=members[0].id if members else None,
+        members=[MemberSummary(...) for m in members],
+        payments=[],
+    )
+
+# app/services/groups.py — Service(DB + ビジネスルール)
+async def create_group_with_initial_members(
+    db: AsyncSession, *, name: str, event_date: date | None, member_names: list[str],
+) -> tuple[Group, list[Member]]:
+    group = Group(name=name, event_date=event_date)
+    db.add(group)
+    await db.flush()
+    members = [Member(group_id=group.id, name=n) for n in member_names]
+    db.add_all(members)
+    await db.commit()
+    await db.refresh(group)
+    for m in members: await db.refresh(m)
+    return group, members
+```
+
+詳細なディレクトリ構成と命名は `docs/conventions.md` §5.10 を参照。
+
 ---
 
 ## 4. 技術スタック
@@ -309,19 +408,21 @@ groups ──┬── members
 
 ### エンドポイント一覧
 
-| Method | Path                          | 用途                                 |
-| ------ | ----------------------------- | ------------------------------------ |
-| POST   | /api/groups                   | グループ作成                         |
-| GET    | /api/groups/{id}              | グループ情報+メンバー+支払い一覧取得 |
-| POST   | /api/groups/{id}/members      | メンバー追加                         |
-| POST   | /api/groups/{id}/payments     | 支払い登録                           |
-| PATCH  | /api/payments/{id}            | 支払い編集                           |
-| DELETE | /api/payments/{id}            | 支払い論理削除                       |
-| GET    | /api/groups/{id}/settlement   | 清算結果(貪欲法 + AI解説)            |
-| POST   | /api/ocr/upload               | レシート画像アップロード→ジョブ作成  |
-| GET    | /api/ocr-jobs/{id}            | OCR ジョブ状態確認                   |
-| POST   | /api/ai/chat-payment          | AIチャット入力(SSEストリーミング)    |
-| POST   | /api/ai/rewrite-share-message | 共有メッセージのトーン変換           |
+| Method | Path                                                | 用途                                 |
+| ------ | --------------------------------------------------- | ------------------------------------ |
+| POST   | /api/groups                                         | グループ作成                         |
+| GET    | /api/groups/{group_id}                              | グループ情報+メンバー+支払い一覧取得 |
+| POST   | /api/groups/{group_id}/members                      | メンバー追加                         |
+| POST   | /api/groups/{group_id}/payments                     | 支払い登録                           |
+| PATCH  | /api/groups/{group_id}/payments/{payment_id}        | 支払い編集                           |
+| DELETE | /api/groups/{group_id}/payments/{payment_id}        | 支払い論理削除                       |
+| GET    | /api/groups/{group_id}/settlement                   | 清算結果(貪欲法 + AI解説)            |
+| POST   | /api/ocr/upload                                     | レシート画像アップロード→ジョブ作成  |
+| GET    | /api/ocr-jobs/{id}                                  | OCR ジョブ状態確認                   |
+| POST   | /api/ai/chat-payment                                | AIチャット入力(SSEストリーミング)    |
+| POST   | /api/ai/rewrite-share-message                       | 共有メッセージのトーン変換           |
+
+> **設計判断**: payment 系の PATCH / DELETE も group 配下にネストする(`/api/groups/{group_id}/payments/{payment_id}`)。これにより `X-Member-Id` 認可を `Depends(require_member)` でそのまま使えるようになり、独自の `X-Group-Id` ヘッダを増やさずに済む。payment_id は UUID v4 で世界的に一意なので path 上の `group_id` は冗長だが、認可と URL の一貫性を優先した。
 
 ### 共通仕様
 
