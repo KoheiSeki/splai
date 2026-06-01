@@ -12,6 +12,31 @@ jobs:
     defaults:
       run:
         working-directory: backend
+
+    # CI 内で ephemeral Postgres を起動。tests/conftest.py が
+    # DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/splai_test を
+    # env から読み取って利用する。Supabase に接続する必要はない。
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: splai_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # Postgres service container への接続。asyncpg driver を指定。
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/splai_test
+      APP_ENV: test
+      ENV: test
+
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -25,12 +50,10 @@ jobs:
         run: uv run ruff check .
       - name: Format check
         run: uv run ruff format --check .
+      - name: Apply alembic migrations
+        # CI の Postgres は空なので、test 実行前に schema を構築する必要がある。
+        # alembic 自体の壊れもこのステップで検知できる(migration が
+        # 走らなければ即 fail)。
+        run: uv run alembic upgrade head
       - name: Test
         run: uv run pytest -v
-        env:
-          # CI のテストは実 DB に接続しない。conftest.py が
-          # os.environ.setdefault で同じ値を入れる二重防御だが、明示することで
-          # APP_ENV が未設定でも .env.local を読まないことを保証する。
-          DATABASE_URL: postgresql+asyncpg://test:test@localhost/test
-          APP_ENV: test
-          ENV: test

@@ -13,9 +13,10 @@ from dotenv import dotenv_values
 # 不存在)に切り替える。これで実環境用の `.env.local` の値が settings に混入しない。
 os.environ.setdefault("APP_ENV", "test")
 
-# Integration test は実 DB(Supabase Pooler)に接続するため、`.env.local` の
-# DATABASE_URL を test 用に流用する。`.env.local` が無ければ dummy URL に
-# フォールバック(その場合 DB を使うテストは接続エラーで失敗する)。
+# DATABASE_URL の解決順序(setdefault なので最初に値が入った時点で確定):
+#   1. CI / shell から渡された環境変数(GitHub Actions の services postgres 等)
+#   2. `.env.local` の DATABASE_URL(ローカル開発、Supabase Pooler を流用)
+#   3. dummy URL(どちらも無い場合のフォールバック、接続時に失敗する)
 _env_file = Path(__file__).parent.parent / ".env.local"
 _real_db_url = dotenv_values(_env_file).get("DATABASE_URL")
 os.environ.setdefault(
