@@ -3721,7 +3721,8 @@ export function PaymentList({
     setDeletingId(paymentId);
     startTransition(async () => {
       try {
-        await deletePayment(paymentId, groupId, memberId);
+        // 引数順は (groupId, paymentId, memberId) — URL path 順と一致
+        await deletePayment(groupId, paymentId, memberId);
         onChange();
       } finally {
         setDeletingId(null);
@@ -3806,31 +3807,31 @@ git commit -m "feat(frontend): add payment list with soft delete"
 ```typescript
 // frontend/features/settlement/api.ts
 "use client";
-import { apiClient } from "@/lib/api/api-client";
 
-export type Settlement = {
-  transfers: { fromId: string; toId: string; amount: number }[];
-  netBalances: Record<string, number>;
-};
+import { getSettlementApiGroupsGroupIdSettlementGet } from "@/lib/api/gen/clients/settlementController/getSettlementApiGroupsGroupIdSettlementGet";
+import type { GetSettlementApiGroupsGroupIdSettlementGetQueryResponse } from "@/lib/api/gen/types/settlementController/GetSettlementApiGroupsGroupIdSettlementGet";
+
+// kubb 生成型を feature 内で短くエイリアス。型の単一情報源は OpenAPI(backend)。
+export type Settlement = GetSettlementApiGroupsGroupIdSettlementGetQueryResponse;
 
 export async function getSettlement(
   groupId: string,
   memberId: string,
 ): Promise<Settlement> {
-  const res = await apiClient.get<Settlement>(
-    `/api/groups/${groupId}/settlement`,
-    { headers: { "X-Member-Id": memberId } },
-  );
-  return res.data;
+  return getSettlementApiGroupsGroupIdSettlementGet(groupId, {
+    "X-Member-Id": memberId,
+  });
 }
 ```
 
 - [ ] **Step 2: コンポーネント**
 
+> **`useTransition` で状態同期**: `useGroup`(Task 17)と同じく、setState を transition の async コールバック内に閉じ込めて React 19 の `react-hooks/no-set-state-in-effect` 警告を回避。`isPending` で再 fetch 中のフラグを表現する。
+
 ```tsx
 // frontend/features/settlement/components/settlement-view.tsx
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 
 import { getSettlement, type Settlement } from "@/features/settlement/api";
 
@@ -3850,18 +3851,30 @@ export function SettlementView({
   refreshKey,
 }: Props) {
   const [data, setData] = useState<Settlement | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<unknown>(null);
+  const [isPending, startTransition] = useTransition();
+
+  const reload = useCallback(() => {
+    startTransition(async () => {
+      try {
+        const res = await getSettlement(groupId, memberId);
+        setData(res);
+        setError(null);
+      } catch (e) {
+        setError(e);
+      }
+    });
+  }, [groupId, memberId]);
 
   useEffect(() => {
-    setLoading(true);
-    getSettlement(groupId, memberId)
-      .then(setData)
-      .finally(() => setLoading(false));
-  }, [groupId, memberId, refreshKey]);
+    reload();
+  }, [reload, refreshKey]);
 
   const name = (id: string) => members.find((m) => m.id === id)?.name ?? "?";
 
-  if (loading) return <p className="font-mono text-xs">loading...</p>;
+  // 初回ロードのみ skeleton を出し、再 fetch 中は古いデータを表示し続ける(stale-while-revalidate)
+  if (isPending && !data) return <p className="font-mono text-xs">loading...</p>;
+  if (error) return <p className="font-mono text-xs text-red">error: {String(error)}</p>;
   if (!data) return null;
 
   return (
