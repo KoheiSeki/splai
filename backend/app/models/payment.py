@@ -9,7 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 
 
-class PaymentSource(str, enum.Enum):
+class PaymentSource(enum.StrEnum):
     """
     支払い情報入力経路の列挙型
     """

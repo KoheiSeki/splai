@@ -1,12 +1,31 @@
 line-length = 100
 target-version = "py312"
 
+# alembic の自動生成 migration ファイルは ruff の対象外にする。
+# alembic CLI が古いスタイル(`from typing import Sequence, Union` など)で
+# テンプレートを生成するため、毎回手で直すのは現実的でない。
+# 必要があれば alembic/script.py.mako を編集する方針。
+extend-exclude = [
+    "alembic/versions",
+]
+
 [lint]
 select = ["E", "F", "W", "I", "B", "UP", "N"]
-ignore = ["E501"]
+ignore = [
+    "E501",
+    # B008: FastAPI の `Depends(...)` / `Header(...)` を関数引数の default 値に
+    # 置く書き方は **FastAPI 公式の推奨パターン**。ruff B008 は FastAPI を
+    # 認識しないので false positive。プロジェクト全体で抑止する。
+    "B008",
+]
 
 [lint.per-file-ignores]
 "tests/*" = ["E501"]
 # 設計書 §9 のドメイン例外は意図的に Error suffix を付けない命名を採用している
 # (GroupNotFound / MemberMismatch / RateLimitExceeded 等)。N818 を抑止する。
 "app/exceptions/domain.py" = ["N818"]
+# SQLAlchemy の `async_sessionmaker(...)` は **クラスのようなファクトリ**を返すため、
+# 慣習的に `SessionLocal` のように PascalCase で受ける。N806(関数内変数は
+# lowercase)を該当ファイルでのみ抑止する。
+"tests/conftest.py" = ["N806"]
+"tests/test_auth_deps.py" = ["N806"]

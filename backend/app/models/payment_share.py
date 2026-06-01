@@ -9,7 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 
 
-class ShareType(str, enum.Enum):
+class ShareType(enum.StrEnum):
     EQUAL = "equal"
     RATIO = "ratio"
     AMOUNT = "amount"
