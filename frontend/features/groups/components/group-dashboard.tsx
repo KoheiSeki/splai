@@ -6,6 +6,8 @@ import { useMemberStorage } from '@/hooks/use-member-storage';
 import { MemberSelect } from './member-select';
 import { PaymentForm } from '@/features/payments/components/payment-form';
 import { PaymentList } from '@/features/payments/components/payment-list';
+import { SettlementView } from '@/features/settlement/components/settlement-view';
+import { useState } from 'react';
 // 後の Task で追加されるコンポーネント:
 // import { PaymentForm } from '@/features/payments/components/payment-form';
 // import { PaymentList } from '@/features/payments/components/payment-list';
@@ -16,6 +18,12 @@ type Props = { groupId: string };
 export function GroupDashboard({ groupId }: Props) {
   const { memberId, setMemberId } = useMemberStorage(groupId);
   const { data, isPending, reload } = useGroup(groupId, memberId);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const onChange = () => {
+    void reload();
+    setRefreshKey((k) => k + 1);
+  };
 
   // メンバー未選択
   if (!memberId) {
@@ -48,14 +56,22 @@ export function GroupDashboard({ groupId }: Props) {
           groupId={groupId}
           memberId={memberId}
           members={data.members}
-          onCreated={reload}
+          onCreated={onChange}
         />
+
         <PaymentList
           groupId={groupId}
           memberId={memberId}
           members={data.members}
           payments={data.payments}
-          onChange={reload}
+          onChange={onChange}
+        />
+
+        <SettlementView
+          groupId={groupId}
+          memberId={memberId}
+          members={data.members}
+          refreshKey={refreshKey}
         />
       </section>
     </main>

@@ -35,7 +35,8 @@ export function PaymentList({ groupId, memberId, members, payments, onChange }: 
     setDeletingId(paymentId);
     startTransition(async () => {
       try {
-        await deletePayment(paymentId, groupId, memberId);
+        // 引数順は (groupId, paymentId, memberId) — URL path 順と一致
+        await deletePayment(groupId, paymentId, memberId);
         onChange();
       } finally {
         setDeletingId(null);
