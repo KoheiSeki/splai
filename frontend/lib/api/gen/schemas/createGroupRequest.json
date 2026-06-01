@@ -1,0 +1,20 @@
+{
+  "properties": {
+    "name": { "type": "string", "maxLength": 100, "minLength": 1, "title": "Name" },
+    "eventDate": {
+      "anyOf": [{ "type": "string", "format": "date" }, { "type": "null" }],
+      "title": "Eventdate"
+    },
+    "memberNames": {
+      "items": { "type": "string" },
+      "type": "array",
+      "maxItems": 20,
+      "title": "Membernames"
+    }
+  },
+  "type": "object",
+  "required": ["name"],
+  "title": "CreateGroupRequest",
+  "description": "グループ作成リクエスト",
+  "x-readme-ref-name": "CreateGroupRequest"
+}

@@ -1,0 +1,952 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "SPLAI Backend",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Health Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/groups": {
+      "post": {
+        "tags": [
+          "groups"
+        ],
+        "summary": "Create Group",
+        "description": "グループを新規作成し、初期メンバーも一緒に登録する。\n\n認可なし: グループ作成時はまだ member が存在しないため X-Member-Id を要求しない\n(設計書 §7 共通仕様の例外)。",
+        "operationId": "create_group_api_groups_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateGroupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/groups/{group_id}": {
+      "get": {
+        "tags": [
+          "groups"
+        ],
+        "summary": "Get Group",
+        "description": "グループ情報 + メンバー + 未削除の支払い一覧を取得。",
+        "operationId": "get_group_api_groups__group_id__get",
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Group Id"
+            }
+          },
+          {
+            "name": "X-Member-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "X-Member-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/groups/{group_id}/members": {
+      "post": {
+        "tags": [
+          "members"
+        ],
+        "summary": "Add Member",
+        "operationId": "add_member_api_groups__group_id__members_post",
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Group Id"
+            }
+          },
+          {
+            "name": "X-Member-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "X-Member-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMemberRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/groups/{group_id}/payments": {
+      "post": {
+        "tags": [
+          "payments"
+        ],
+        "summary": "Create Payment",
+        "description": "支払いを作成するAPI",
+        "operationId": "create_payment_api_groups__group_id__payments_post",
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Group Id"
+            }
+          },
+          {
+            "name": "X-Member-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "X-Member-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePaymentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/groups/{group_id}/payments/{payment_id}": {
+      "patch": {
+        "tags": [
+          "payments"
+        ],
+        "summary": "Update Payment",
+        "description": "支払いを編集するAPI",
+        "operationId": "update_payment_api_groups__group_id__payments__payment_id__patch",
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Group Id"
+            }
+          },
+          {
+            "name": "payment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Payment Id"
+            }
+          },
+          {
+            "name": "X-Member-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "X-Member-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePaymentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "payments"
+        ],
+        "summary": "Delete Payment",
+        "operationId": "delete_payment_api_groups__group_id__payments__payment_id__delete",
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Group Id"
+            }
+          },
+          {
+            "name": "payment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Payment Id"
+            }
+          },
+          {
+            "name": "X-Member-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "X-Member-Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/groups/{group_id}/settlement": {
+      "get": {
+        "tags": [
+          "settlement"
+        ],
+        "summary": "Get Settlement",
+        "operationId": "get_settlement_api_groups__group_id__settlement_get",
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Group Id"
+            }
+          },
+          {
+            "name": "X-Member-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "X-Member-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettlementResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CreateGroupRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "eventDate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eventdate"
+          },
+          "memberNames": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Membernames"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "CreateGroupRequest",
+        "description": "グループ作成リクエスト"
+      },
+      "CreateMemberRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "CreateMemberRequest",
+        "description": "メンバー作成リクエスト"
+      },
+      "CreatePaymentRequest": {
+        "properties": {
+          "payerId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Payerid"
+          },
+          "amount": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Amount"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 500,
+            "title": "Description",
+            "default": ""
+          },
+          "paidAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paidat"
+          },
+          "shares": {
+            "items": {
+              "$ref": "#/components/schemas/ShareInput"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Shares"
+          }
+        },
+        "type": "object",
+        "required": [
+          "payerId",
+          "amount",
+          "shares"
+        ],
+        "title": "CreatePaymentRequest",
+        "description": "支払い作成リクエスト"
+      },
+      "GroupResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "eventDate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eventdate"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency"
+          },
+          "creatorMemberId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Creatormemberid"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/MemberSummary"
+            },
+            "type": "array",
+            "title": "Members"
+          },
+          "payments": {
+            "items": {
+              "$ref": "#/components/schemas/PaymentSummary"
+            },
+            "type": "array",
+            "title": "Payments"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "eventDate",
+          "currency",
+          "members",
+          "payments"
+        ],
+        "title": "GroupResponse",
+        "description": "グループ情報。\n\n`members` / `payments` は backend が常に値を返すので default を持たせない\n(= OpenAPI 上 required になる → frontend の TS 型でも non-optional)。\nRequest 側の default_factory と混同しないこと。"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "MemberResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "groupId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Groupid"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "groupId",
+          "name",
+          "createdAt"
+        ],
+        "title": "MemberResponse",
+        "description": "メンバー情報"
+      },
+      "MemberSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "createdAt"
+        ],
+        "title": "MemberSummary",
+        "description": "メンバー情報"
+      },
+      "PaymentSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "payerId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Payerid"
+          },
+          "amount": {
+            "type": "integer",
+            "title": "Amount"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "paidAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Paidat"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "ocr",
+              "chat"
+            ],
+            "title": "Source"
+          },
+          "shares": {
+            "items": {
+              "$ref": "#/components/schemas/ShareSummary"
+            },
+            "type": "array",
+            "title": "Shares"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "payerId",
+          "amount",
+          "description",
+          "paidAt",
+          "source",
+          "shares"
+        ],
+        "title": "PaymentSummary",
+        "description": "支払い情報。\n\n`shares` は backend が常に返すので default を持たせない\n(= OpenAPI required → frontend TS 型でも non-optional)。"
+      },
+      "SettlementResponse": {
+        "properties": {
+          "transfers": {
+            "items": {
+              "$ref": "#/components/schemas/TransferDTO"
+            },
+            "type": "array",
+            "title": "Transfers"
+          },
+          "netBalances": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Netbalances"
+          }
+        },
+        "type": "object",
+        "required": [
+          "transfers",
+          "netBalances"
+        ],
+        "title": "SettlementResponse",
+        "description": "清算結果"
+      },
+      "ShareInput": {
+        "properties": {
+          "memberId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Memberid"
+          },
+          "shareType": {
+            "type": "string",
+            "enum": [
+              "equal",
+              "ratio",
+              "amount"
+            ],
+            "title": "Sharetype"
+          },
+          "shareValue": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Sharevalue"
+          }
+        },
+        "type": "object",
+        "required": [
+          "memberId",
+          "shareType",
+          "shareValue"
+        ],
+        "title": "ShareInput",
+        "description": "支払い共有入力"
+      },
+      "ShareSummary": {
+        "properties": {
+          "memberId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Memberid"
+          },
+          "shareType": {
+            "type": "string",
+            "enum": [
+              "equal",
+              "ratio",
+              "amount"
+            ],
+            "title": "Sharetype"
+          },
+          "shareValue": {
+            "type": "number",
+            "title": "Sharevalue"
+          }
+        },
+        "type": "object",
+        "required": [
+          "memberId",
+          "shareType",
+          "shareValue"
+        ],
+        "title": "ShareSummary",
+        "description": "支払い共有情報"
+      },
+      "TransferDTO": {
+        "properties": {
+          "fromId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Fromid"
+          },
+          "toId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Toid"
+          },
+          "amount": {
+            "type": "integer",
+            "title": "Amount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "fromId",
+          "toId",
+          "amount"
+        ],
+        "title": "TransferDTO",
+        "description": "送金情報"
+      },
+      "UpdatePaymentRequest": {
+        "properties": {
+          "payerId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payerid"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "paidAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paidat"
+          },
+          "shares": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ShareInput"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shares"
+          }
+        },
+        "type": "object",
+        "title": "UpdatePaymentRequest",
+        "description": "支払い更新リクエスト"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

@@ -31,3 +31,6 @@ asyncio_mode = "auto"
 
 [tool.coverage.run]
 source = ["app"]
+
+[project.scripts]
+dump-openapi = "scripts.dump_openapi:main"

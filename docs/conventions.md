@@ -310,6 +310,87 @@ from app.db.session import get_session
 - ❌ 例外を pass で握りつぶす(必ずログか再 raise)
 - ❌ コメントアウトされたコードを残す(git に消えても残る)
 
+### 5.10 ディレクトリ構成
+
+`backend/app/` 直下に **責務単位のレイヤディレクトリ**を置き、レイヤ間の依存方向を厳格に保つ。詳細な層モデルは `docs/superpowers/specs/design.md` §3「Backend 内部レイヤ構造」を参照。
+
+```
+backend/app/
+├── api/                  # Router(HTTP I/O のみ)
+│   ├── groups.py         #   POST/GET /api/groups
+│   ├── members.py        #   POST /api/groups/{id}/members
+│   └── payments.py       #   POST/PATCH/DELETE /api/payments
+├── services/             # ★ I/O を伴うビジネスロジック(orchestration)
+│   ├── groups.py         #   DB + ビジネスルール
+│   ├── payments.py
+│   ├── ai_gateway.py     #   IBM CA API 呼び出し中継(後フェーズ)
+│   └── ocr_gateway.py    #   GCP Vision 呼び出し(後フェーズ)
+├── utils/                # ★ 純粋関数(I/O なし、framework 非依存)
+│   ├── settlement.py     #   清算アルゴリズム(貪欲法)
+│   └── format.py         #   金額フォーマット等
+├── models/               # SQLAlchemy ORM 定義
+├── schemas/              # Pydantic DTO(camelCase 変換)
+├── auth/                 # 認可関連(require_member 等)
+├── exceptions/           # ドメイン例外 + handler
+├── middleware/           # request_id, logging
+├── db/                   # session, base
+└── main.py               # create_app
+```
+
+#### `services/` と `utils/` の使い分け
+
+```
+ロジックを書くとき
+    │
+    ▼
+┌─────────────────────────────────┐
+│ DB / 外部 API / I/O を触るか?   │
+└─────────┬────────────────┬──────┘
+          │ Yes            │ No
+          ▼                ▼
+   app/services/     app/utils/
+```
+
+| 配置先          | 条件                                                            | 例                                            |
+| --------------- | --------------------------------------------------------------- | --------------------------------------------- |
+| `app/utils/`    | I/O を持たない純粋関数(同じ入力 → 同じ出力)、framework 非依存 | 清算アルゴリズム、金額フォーマット            |
+| `app/services/` | `AsyncSession` や httpx などを引数に取り、副作用を持つ          | グループ作成、支払い登録、AI/OCR ゲートウェイ |
+| `app/api/`      | HTTP request/response のバインドと DTO 変換のみ                 | ルーターハンドラ                              |
+
+#### レイヤ間の依存方向(一方向)
+
+```
+api/  ──► services/  ──► utils/
+api/  ──► utils/                  (純粋計算のみ使う場合は service を経由しなくて良い)
+api/  ──► models/, schemas/       (DTO 変換のため)
+services/ ──► models/             (ORM 操作のため)
+services/ ──► utils/              (純粋計算を呼ぶため)
+```
+
+**逆向き禁止**: `services/` から `api/` を、`utils/` から `services/` を import しない。`utils/` は framework 非依存(FastAPI / SQLAlchemy への参照禁止)。
+
+#### Router の責務(HTTP I/O のみ)
+
+router の中で以下を **書かない**:
+
+- ❌ `db.add(...)`, `db.flush()`, `db.commit()` などの DB 操作
+- ❌ 複数エンティティの atomic 作成・更新
+- ❌ ビジネスルールの判定(「先頭メンバーが作成者」等)
+
+router で **書くこと**:
+
+- ✅ Pydantic request DTO の受け取り(`body: CreateGroupRequest`)
+- ✅ 認可(`Depends(require_member)`)
+- ✅ service 関数の呼び出し
+- ✅ ORM model → Pydantic response の変換
+- ✅ status code(`status.HTTP_201_CREATED`)
+
+#### Service の戻り値は ORM model
+
+`services/` は **Pydantic schema を返さない**。ORM model(必要なら tuple)を返し、DTO 変換は router 側で行う。
+
+理由: service が将来 background job / CLI / 別 router からも呼べるようにするため。Pydantic schema は HTTP 表現の都合で揺らぎやすいが、ドメインモデル(ORM model)は安定。
+
 ---
 
 ## 6. コーディング規約 — TypeScript (Frontend)
@@ -349,14 +430,87 @@ from app.db.session import get_session
 - `params` / `searchParams` は **Promise**(Next 15)→ `await params` を忘れない
 - データ取得は Server Component なら `fetch` 直書き、Client なら axios(`@/lib/api-client`)
 
-### 6.5 命名
+### 6.5 命名・ディレクトリ構造(Frontend)
+
+#### 識別子の命名
 
 - 変数・関数: camelCase(`getUserName`)
-- React コンポーネント: PascalCase(`GroupCard`)
+- React コンポーネント: PascalCase(`GroupCard`)。**階層タグ(`Section` / `Block` / `Page` 等)の suffix は付けない**(階層は配置で表現する)
 - フック: `use` + camelCase(`useGroup`)
 - 型・interface: PascalCase(`GroupResponse`、prefix の `I` は付けない)
 - 定数: 場面に応じて。モジュールスコープで再代入しない真の定数のみ UPPER_SNAKE
 - 環境変数の参照: `env.NEXT_PUBLIC_API_BASE_URL`(`@/lib/env` 経由)
+
+#### ファイル名
+
+**全ファイル kebab-case**(suffix は `.test.ts(x)` のみ)。`.utils.ts` `.types.ts` `.hook.ts` `.section.tsx` 等の suffix は使わない — ディレクトリ位置で役割を表現する。
+
+| 種別 | ファイル名 | export 名 | 例 |
+|---|---|---|---|
+| Page(Next.js) | `page.tsx`(規約) | default export | `app/g/[uuid]/page.tsx` |
+| Component(全階層) | kebab-case + `.tsx` | PascalCase | `payment-form.tsx` exports `PaymentForm` |
+| Hook | `use-<name>.ts` | `use<Name>` | `use-group.ts` exports `useGroup` |
+| API client | `api.ts` | named exports(camelCase) | `features/groups/api.ts` exports `createGroup` |
+| Types | `types.ts` | named type exports | `features/payments/types.ts` exports `Payment` |
+| Pure utils | `<topic>.ts` | named exports | `utils/format.ts` exports `formatYen` |
+| Infra primitive | `<purpose>.ts` | named exports | `lib/api/client.ts` exports `apiClient` |
+| Test | `<source>.test.ts(x)` | (test 関数) | `payment-form.test.tsx` |
+
+#### ディレクトリ階層(feature-based)
+
+```
+frontend/
+├── app/                    # Next.js routing 専用(page / layout のみ、薄い shell)
+├── features/               # ★ ドメイン単位の自己完結スライス
+│   └── <domain>/           #   例: groups, payments, settlement
+│       ├── components/     #   複数 file 前提でディレクトリ
+│       ├── api.ts          #   1 file → flat。3+ になったら api/ に昇格
+│       ├── types.ts        #   同上
+│       ├── use-xxx.ts      #   ★ hook 1-2 個は flat。3+ になったら hooks/ に昇格
+│       └── utils.ts        #   feature 特化の純粋関数(必要時、同上)
+├── components/             # 共有 UI primitives(複数 feature が使う)
+├── hooks/                  # 共有 hooks(複数 feature が使う)
+├── utils/                  # ★ 共有の純粋関数 helper(format, calc 等)
+└── lib/                    # ★ 副作用 / Web API 依存の infra primitives
+    ├── api/                #   axios インスタンス、生成型
+    ├── auth/               #   localStorage 低レベル
+    ├── env.ts
+    └── request-id.ts
+```
+
+**配置の判定 — 2 軸**:
+
+1. **共有 vs 機能特化**(横軸):
+   - 影響 feature 数が **1 個** → `features/<X>/` 内に閉じる
+   - **2 個以上** → 共有層(`components/` / `hooks/` / `utils/` / `lib/`)へ昇格
+2. **副作用の有無**(縦軸、共有層内):
+   - 外部依存あり(localStorage / fetch / process.env / 時刻 / random) → `lib/`
+   - pure(同じ入力 → 同じ出力) → `utils/`
+
+**`features/<X>/` 内の sub-directory 化ルール**(単一 → flat、複数 → ディレクトリ):
+
+| 種別 | 1-2 file | 3+ file |
+|---|---|---|
+| hooks(`use-*.ts`) | feature 直下に flat | `features/<X>/hooks/` |
+| api | `api.ts` | `features/<X>/api/` |
+| types | `types.ts` | `features/<X>/types/` |
+| utils(機能特化) | `utils.ts` | `features/<X>/utils/` |
+| components | 常に `components/`(複数前提) | (常にディレクトリ) |
+
+→ ファイル増加に応じて自然にディレクトリ昇格。最初から空の `hooks/` ディレクトリを作らない。
+
+#### コンポーネント階層(語彙のみ、ディレクトリ強制なし)
+
+レビュー / 議論で使う語彙(物理ディレクトリでは強制しない):
+
+| 階層 | 役割 | 例 |
+|---|---|---|
+| **Page** | 完全な画面(Next.js routing entry) | `app/g/[uuid]/page.tsx` |
+| **Section** | ページ内の大きな区画 | `GroupDashboard`、`PaymentForm`(現在の Phase 1 はほぼ全部 Section 級) |
+| **Block** | Section の中で区切りたい中間階層(必要時のみ導入) | (Phase 3 以降) |
+| **Component(primitive)** | 単機能の UI 構成要素 | (Phase 2 以降の `Button`, `Input` 等) |
+
+階層が変わってもファイル名は変えない(ディレクトリ移動のみ)。これにより階層判断のリファクタが import 全箇所に波及しない。
 
 ### 6.6 やらないこと
 

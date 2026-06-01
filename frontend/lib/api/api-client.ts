@@ -1,6 +1,6 @@
 import axios, { AxiosError } from 'axios';
-import { env } from './env';
-import { generateRequestId } from './request-id';
+import { env } from '@/lib/env';
+import { generateRequestId } from '@/lib/request-id';
 
 export const apiClient = axios.create({
   baseURL: env.NEXT_PUBLIC_API_BASE_URL,

@@ -1,0 +1,13 @@
+{
+  "properties": {
+    "id": { "type": "string", "format": "uuid", "title": "Id" },
+    "groupId": { "type": "string", "format": "uuid", "title": "Groupid" },
+    "name": { "type": "string", "title": "Name" },
+    "createdAt": { "type": "string", "format": "date-time", "title": "Createdat" }
+  },
+  "type": "object",
+  "required": ["id", "groupId", "name", "createdAt"],
+  "title": "MemberResponse",
+  "description": "メンバー情報",
+  "x-readme-ref-name": "MemberResponse"
+}

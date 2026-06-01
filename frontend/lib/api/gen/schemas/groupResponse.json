@@ -1,0 +1,75 @@
+{
+  "properties": {
+    "id": { "type": "string", "format": "uuid", "title": "Id" },
+    "name": { "type": "string", "title": "Name" },
+    "eventDate": {
+      "anyOf": [{ "type": "string", "format": "date" }, { "type": "null" }],
+      "title": "Eventdate"
+    },
+    "currency": { "type": "string", "title": "Currency" },
+    "creatorMemberId": {
+      "anyOf": [{ "type": "string", "format": "uuid" }, { "type": "null" }],
+      "title": "Creatormemberid"
+    },
+    "members": {
+      "items": {
+        "properties": {
+          "id": { "type": "string", "format": "uuid", "title": "Id" },
+          "name": { "type": "string", "title": "Name" },
+          "createdAt": { "type": "string", "format": "date-time", "title": "Createdat" }
+        },
+        "type": "object",
+        "required": ["id", "name", "createdAt"],
+        "title": "MemberSummary",
+        "description": "メンバー情報",
+        "x-readme-ref-name": "MemberSummary"
+      },
+      "type": "array",
+      "title": "Members"
+    },
+    "payments": {
+      "items": {
+        "properties": {
+          "id": { "type": "string", "format": "uuid", "title": "Id" },
+          "payerId": { "type": "string", "format": "uuid", "title": "Payerid" },
+          "amount": { "type": "integer", "title": "Amount" },
+          "description": { "type": "string", "title": "Description" },
+          "paidAt": { "type": "string", "format": "date-time", "title": "Paidat" },
+          "source": { "type": "string", "enum": ["manual", "ocr", "chat"], "title": "Source" },
+          "shares": {
+            "items": {
+              "properties": {
+                "memberId": { "type": "string", "format": "uuid", "title": "Memberid" },
+                "shareType": {
+                  "type": "string",
+                  "enum": ["equal", "ratio", "amount"],
+                  "title": "Sharetype"
+                },
+                "shareValue": { "type": "number", "title": "Sharevalue" }
+              },
+              "type": "object",
+              "required": ["memberId", "shareType", "shareValue"],
+              "title": "ShareSummary",
+              "description": "支払い共有情報",
+              "x-readme-ref-name": "ShareSummary"
+            },
+            "type": "array",
+            "title": "Shares"
+          }
+        },
+        "type": "object",
+        "required": ["id", "payerId", "amount", "description", "paidAt", "source", "shares"],
+        "title": "PaymentSummary",
+        "description": "支払い情報。\n\n`shares` は backend が常に返すので default を持たせない\n(= OpenAPI required → frontend TS 型でも non-optional)。",
+        "x-readme-ref-name": "PaymentSummary"
+      },
+      "type": "array",
+      "title": "Payments"
+    }
+  },
+  "type": "object",
+  "required": ["id", "name", "eventDate", "currency", "members", "payments"],
+  "title": "GroupResponse",
+  "description": "グループ情報。\n\n`members` / `payments` は backend が常に値を返すので default を持たせない\n(= OpenAPI 上 required になる → frontend の TS 型でも non-optional)。\nRequest 側の default_factory と混同しないこと。",
+  "x-readme-ref-name": "GroupResponse"
+}

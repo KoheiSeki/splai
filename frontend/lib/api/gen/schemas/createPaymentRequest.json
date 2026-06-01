@@ -1,0 +1,37 @@
+{
+  "properties": {
+    "payerId": { "type": "string", "format": "uuid", "title": "Payerid" },
+    "amount": { "type": "integer", "exclusiveMinimum": 0, "title": "Amount" },
+    "description": { "type": "string", "maxLength": 500, "title": "Description", "default": "" },
+    "paidAt": {
+      "anyOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }],
+      "title": "Paidat"
+    },
+    "shares": {
+      "items": {
+        "properties": {
+          "memberId": { "type": "string", "format": "uuid", "title": "Memberid" },
+          "shareType": {
+            "type": "string",
+            "enum": ["equal", "ratio", "amount"],
+            "title": "Sharetype"
+          },
+          "shareValue": { "type": "number", "exclusiveMinimum": 0, "title": "Sharevalue" }
+        },
+        "type": "object",
+        "required": ["memberId", "shareType", "shareValue"],
+        "title": "ShareInput",
+        "description": "支払い共有入力",
+        "x-readme-ref-name": "ShareInput"
+      },
+      "type": "array",
+      "minItems": 1,
+      "title": "Shares"
+    }
+  },
+  "type": "object",
+  "required": ["payerId", "amount", "shares"],
+  "title": "CreatePaymentRequest",
+  "description": "支払い作成リクエスト",
+  "x-readme-ref-name": "CreatePaymentRequest"
+}

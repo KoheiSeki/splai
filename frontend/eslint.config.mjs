@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     'out/**',
     'build/**',
     'next-env.d.ts',
+    // kubb による自動生成コード(lib/api/gen/)。再生成で上書きされるため lint 対象外。
+    // 型安全性は typecheck(`tsc --noEmit`)で別途担保している。
+    'lib/api/gen/**',
   ]),
 ]);
 
