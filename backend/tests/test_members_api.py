@@ -8,9 +8,7 @@ from httpx import AsyncClient
 
 
 async def test_add_member_returns_201(client: AsyncClient):
-    create_res = await client.post(
-        "/api/groups", json={"name": "g1", "memberNames": ["Alice"]}
-    )
+    create_res = await client.post("/api/groups", json={"name": "g1", "memberNames": ["Alice"]})
     gid = create_res.json()["id"]
     creator_mid = create_res.json()["creatorMemberId"]
 
@@ -26,9 +24,7 @@ async def test_add_member_returns_201(client: AsyncClient):
 
 
 async def test_add_member_requires_x_member_id(client: AsyncClient):
-    create_res = await client.post(
-        "/api/groups", json={"name": "g1", "memberNames": ["A"]}
-    )
+    create_res = await client.post("/api/groups", json={"name": "g1", "memberNames": ["A"]})
     gid = create_res.json()["id"]
 
     res = await client.post(f"/api/groups/{gid}/members", json={"name": "Bob"})

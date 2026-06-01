@@ -25,15 +25,12 @@ async def test_settlement_for_three_party_equal_split(client: AsyncClient):
             "amount": 12000,
             "description": "x",
             "shares": [
-                {"memberId": m["id"], "shareType": "equal", "shareValue": 1.0}
-                for m in members
+                {"memberId": m["id"], "shareType": "equal", "shareValue": 1.0} for m in members
             ],
         },
     )
 
-    res = await client.get(
-        f"/api/groups/{gid}/settlement", headers={"X-Member-Id": creator_mid}
-    )
+    res = await client.get(f"/api/groups/{gid}/settlement", headers={"X-Member-Id": creator_mid})
     assert res.status_code == 200
     body = res.json()
     assert len(body["transfers"]) == 2
