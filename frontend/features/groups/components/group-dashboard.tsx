@@ -5,6 +5,7 @@ import { useMemberStorage } from '@/hooks/use-member-storage';
 
 import { MemberSelect } from './member-select';
 import { PaymentForm } from '@/features/payments/components/payment-form';
+import { PaymentList } from '@/features/payments/components/payment-list';
 // 後の Task で追加されるコンポーネント:
 // import { PaymentForm } from '@/features/payments/components/payment-form';
 // import { PaymentList } from '@/features/payments/components/payment-list';
@@ -48,6 +49,13 @@ export function GroupDashboard({ groupId }: Props) {
           memberId={memberId}
           members={data.members}
           onCreated={reload}
+        />
+        <PaymentList
+          groupId={groupId}
+          memberId={memberId}
+          members={data.members}
+          payments={data.payments}
+          onChange={reload}
         />
       </section>
     </main>
