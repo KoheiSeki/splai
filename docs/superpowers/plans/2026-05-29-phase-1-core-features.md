@@ -3191,57 +3191,46 @@ git commit -m "feat(frontend): replace landing page with create group form"
 
 - [ ] **Step 1: グループ取得 hook を feature 直下に flat 実装**
 
+> **kubb 生成 client + `useTransition`**: HTTP は `getGroupApiGroupsGroupIdGet`(kubb 生成)経由。`X-Member-Id` は型付き第 2 引数として要求されるので忘れると compile error。状態同期は `useTransition` で setState を transition 内に閉じ込め、React 19 の `react-hooks/no-set-state-in-effect` 警告を回避する。
+
 ```typescript
 // frontend/features/groups/use-group.ts
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 
-import { apiClient } from "@/lib/api/api-client";
+import { getGroupApiGroupsGroupIdGet } from "@/lib/api/gen/clients/groupsController/getGroupApiGroupsGroupIdGet";
+import type { GetGroupApiGroupsGroupIdGetQueryResponse } from "@/lib/api/gen/types/groupsController/GetGroupApiGroupsGroupIdGet";
 
-export type GroupData = {
-  id: string;
-  name: string;
-  eventDate: string | null;
-  currency: string;
-  members: { id: string; name: string; createdAt: string }[];
-  payments: {
-    id: string;
-    payerId: string;
-    amount: number;
-    description: string;
-    paidAt: string;
-    source: string;
-    shares: { memberId: string; shareType: string; shareValue: number }[];
-  }[];
-};
+// kubb 生成型を feature 内で短くエイリアス。型の単一情報源は OpenAPI。
+export type GroupData = GetGroupApiGroupsGroupIdGetQueryResponse;
 
 export function useGroup(groupId: string, memberId: string | null) {
   const [data, setData] = useState<GroupData | null>(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
+  const [isPending, startTransition] = useTransition();
 
-  const reload = async () => {
+  const reload = useCallback(() => {
     if (!memberId) return;
-    setLoading(true);
-    try {
-      const res = await apiClient.get<GroupData>(`/api/groups/${groupId}`, {
-        headers: { "X-Member-Id": memberId },
-      });
-      setData(res.data);
-      setError(null);
-    } catch (e) {
-      setError(e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    void reload();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // すべての setState を transition の async コールバック内に閉じ込める。
+    // → effect 本体で setState が同期的に走らず、lint 警告が出ない。
+    startTransition(async () => {
+      try {
+        const res = await getGroupApiGroupsGroupIdGet(groupId, {
+          "X-Member-Id": memberId,
+        });
+        setData(res);
+        setError(null);
+      } catch (e) {
+        setError(e);
+      }
+    });
   }, [groupId, memberId]);
 
-  return { data, loading, error, reload };
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  return { data, isPending, error, reload };
 }
 ```
 
@@ -3467,42 +3456,46 @@ git commit -m "feat(frontend): add /g/[uuid] page with member selection"
 
 - [ ] **Step 1: API ラッパ(payments feature 内)**
 
+> **kubb 生成 client を使う**: backend の OpenAPI に存在する endpoint なので、Task 14 のルール通り `lib/api/gen/clients/...` 経由で呼ぶ。型は OpenAPI から再生成されるので、自前定義しない。`X-Member-Id` は kubb の Header 規約により第 3 positional 引数として渡す。
+
 ```typescript
 // frontend/features/payments/api.ts
 "use client";
-import { apiClient } from "@/lib/api/api-client";
 
-export type CreatePaymentInput = {
-  payerId: string;
-  amount: number;
-  description: string;
-  paidAt?: string;
-  shares: {
-    memberId: string;
-    shareType: "equal" | "amount";
-    shareValue: number;
-  }[];
-};
+import { createPaymentApiGroupsGroupIdPaymentsPost } from "@/lib/api/gen/clients/paymentsController/createPaymentApiGroupsGroupIdPaymentsPost";
+import { deletePaymentApiGroupsGroupIdPaymentsPaymentIdDelete } from "@/lib/api/gen/clients/paymentsController/deletePaymentApiGroupsGroupIdPaymentsPaymentIdDelete";
+import type {
+  CreatePaymentApiGroupsGroupIdPaymentsPostMutationRequest,
+  CreatePaymentApiGroupsGroupIdPaymentsPostMutationResponse,
+} from "@/lib/api/gen/types/paymentsController/CreatePaymentApiGroupsGroupIdPaymentsPost";
+
+// kubb の長い型名を feature 内で短くエイリアスして UI から使いやすく。
+// 型の単一情報源は OpenAPI(backend)→ 重複定義しない。
+export type CreatePaymentInput =
+  CreatePaymentApiGroupsGroupIdPaymentsPostMutationRequest;
+export type CreatePaymentResponse =
+  CreatePaymentApiGroupsGroupIdPaymentsPostMutationResponse;
 
 export async function createPayment(
   groupId: string,
   memberId: string,
   input: CreatePaymentInput,
-) {
-  const res = await apiClient.post(`/api/groups/${groupId}/payments`, input, {
-    headers: { "X-Member-Id": memberId },
+): Promise<CreatePaymentResponse> {
+  return createPaymentApiGroupsGroupIdPaymentsPost(groupId, input, {
+    "X-Member-Id": memberId,
   });
-  return res.data;
 }
 
 export async function deletePayment(
   paymentId: string,
   groupId: string,
   memberId: string,
-) {
-  await apiClient.delete(`/api/groups/${groupId}/payments/${paymentId}`, {
-    headers: { "X-Member-Id": memberId },
-  });
+): Promise<void> {
+  await deletePaymentApiGroupsGroupIdPaymentsPaymentIdDelete(
+    groupId,
+    paymentId,
+    { "X-Member-Id": memberId },
+  );
 }
 ```
 
