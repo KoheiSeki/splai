@@ -4,6 +4,7 @@ import { useGroup } from '@/features/groups/use-group';
 import { useMemberStorage } from '@/hooks/use-member-storage';
 
 import { MemberSelect } from './member-select';
+import { PaymentForm } from '@/features/payments/components/payment-form';
 // 後の Task で追加されるコンポーネント:
 // import { PaymentForm } from '@/features/payments/components/payment-form';
 // import { PaymentList } from '@/features/payments/components/payment-list';
@@ -41,12 +42,13 @@ export function GroupDashboard({ groupId }: Props) {
       </header>
 
       {/* Phase 1 後続 Task で埋めていく */}
-      <section>
-        <p className="font-mono text-sm">payments: {data.payments.length}</p>
-        <p className="font-mono text-sm">memberId: {memberId}</p>
-        <button onClick={reload} className="font-mono text-xs underline">
-          reload
-        </button>
+      <section className="flex flex-col gap-4">
+        <PaymentForm
+          groupId={groupId}
+          memberId={memberId}
+          members={data.members}
+          onCreated={reload}
+        />
       </section>
     </main>
   );
