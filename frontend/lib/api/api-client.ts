@@ -4,7 +4,7 @@ import { generateRequestId } from '@/lib/request-id';
 
 export const apiClient = axios.create({
   baseURL: env.NEXT_PUBLIC_API_BASE_URL,
-  timeout: 15000,
+  timeout: 30000,
 });
 
 apiClient.interceptors.request.use((config) => {
