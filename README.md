@@ -70,6 +70,15 @@ cd backend
 uv run ruff check . && uv run ruff format --check . && uv run pytest -v
 ```
 
+### Pre-commit hook(lefthook)
+
+ruff / prettier / eslint を commit 時に自動実行。CI 失敗を未然に防ぐ。
+
+```bash
+brew install lefthook    # 初回のみ(linux は curl 版)
+lefthook install         # repo clone 直後に 1 回実行
+```
+
 ## Deployment
 
 - Frontend: Vercel(main → Production / develop → Preview の自動デプロイ)
