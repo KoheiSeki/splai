@@ -1,0 +1,32 @@
+# pre-commit で自動 format/lint。`stage_fixed: true` で fix 結果を staged に戻す
+# (formatter が変えたファイルを commit に含める)。
+#
+# `root:` を指定することで:
+#   1. command が `root` ディレクトリで実行される(`cd backend` が不要)
+#   2. `{staged_files}` が root 相対のパスに自動変換される
+#      (例: `backend/tests/foo.py` → `tests/foo.py`)
+# `cd backend && ... {staged_files}` は paths が二重解釈されてエラーになるため使わない。
+
+pre-commit:
+  parallel: true
+  commands:
+    backend-format:
+      root: 'backend/'
+      glob: '*.py'
+      run: uv run ruff format {staged_files}
+      stage_fixed: true
+    backend-lint:
+      root: 'backend/'
+      glob: '*.py'
+      run: uv run ruff check --fix {staged_files}
+      stage_fixed: true
+    frontend-format:
+      root: 'frontend/'
+      glob: '*.{ts,tsx,js,jsx,json,css,md}'
+      run: npx prettier --write {staged_files}
+      stage_fixed: true
+    frontend-lint:
+      root: 'frontend/'
+      glob: '*.{ts,tsx}'
+      run: npx eslint --fix {staged_files}
+      stage_fixed: true
