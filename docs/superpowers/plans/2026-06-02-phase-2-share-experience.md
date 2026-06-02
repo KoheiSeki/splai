@@ -64,87 +64,168 @@ splai/
 
 ## Tasks
 
-### Task 1: 本番 404 の調査と修復(緊急)
+### Task 1: 本番 404 の原因調査(完了)
 
-> Phase 1 release 後、`POST /api/groups` が 404 を返す事象が報告されている。Phase 2 の機能実装に着手する前にまず復旧する。原因は以下のいずれかが濃厚:
+> Phase 1 release 後、`POST /api/groups` が 404 を返す事象が報告された。診断結果:
 >
-> 1. Vercel 本番の `NEXT_PUBLIC_API_BASE_URL` 値が誤り(例: localhost や frontend URL を指している)
-> 2. Fly.io VM が auto-stop から auto-start しないまま 404 を返している
-> 3. Backend が期待した path に listen していない(CORS / prefix 違い)
+> ```
+> $ curl -s https://splai-backend.fly.dev/openapi.json \
+>     | python3 -c "import sys,json; print(list(json.load(sys.stdin).get('paths',{}).keys()))"
+> ['/health']
+> ```
 >
-> 切り分けを順に進める。
+> **Fly.io にデプロイされている image が Phase 0 のまま**で、Phase 1 で追加した `/api/groups` 等の endpoint が **本番に届いていない**ことが判明。
+>
+> 根本原因: Phase 0 plan で「Backend deploy: Phase 1+ で GitHub Actions に移行」と記載していたが、その移行タスクが Phase 1 plan に組み込まれずに抜けていた。
 
-**Files:** 設定変更のみ(コード変更は通常不要)
+### Task 1.5: Fly.io に Phase 1 を緊急 deploy(本番復旧)
 
-- [ ] **Step 1: Backend に直接アクセスして応答を確認**
+**Files:** なし(deploy のみ)
+
+- [ ] **Step 1: ローカルから手動 deploy**
 
 ```bash
-# Fly.io アプリ名(splai-backend)に対して health endpoint を叩く
-curl -i https://splai-backend.fly.dev/health
+cd /Users/koheiseki/dev/git/splai/backend
+flyctl deploy -a splai-backend
 ```
 
-期待出力(成功): `HTTP/2 200` + `{"status":"ok"}`
-- 200 が返る → backend は健全。原因は frontend → backend の経路(API_BASE_URL の値違い)
-- 404 / 503 / 接続失敗 → Fly.io の VM が起動していない or deploy 不全(Step 2 へ)
+> Phase 2 で GitHub Actions による auto-deploy を入れる(Task 1.6)までは、main マージ後に手動でこのコマンドを叩く運用にする。
 
-- [ ] **Step 2: Fly.io VM の状態を確認**
+- [ ] **Step 2: deploy 後の endpoint 一覧を検証**
 
 ```bash
-flyctl status -a splai-backend
-flyctl machine list -a splai-backend
+curl -s https://splai-backend.fly.dev/openapi.json \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print(*sorted(d['paths'].keys()), sep='\n')"
 ```
 
-- machine が `stopped` のみ → リクエストで auto-start するはずだが、最初の数秒は 404 になりうる。`flyctl machine start <id>` で手動起動してから再試行
-- machine が `started` で health は OK → backend 自体は問題なし
+期待出力:
 
-- [ ] **Step 3: 認可不要の POST 経路を直接叩く**
-
-`POST /api/groups` は X-Member-Id が不要なので、curl で直接到達確認する:
-
-```bash
-curl -i -X POST https://splai-backend.fly.dev/api/groups \
-  -H "Content-Type: application/json" \
-  -d '{"name":"diag","memberNames":["A"]}'
+```
+/api/groups
+/api/groups/{group_id}
+/api/groups/{group_id}/members
+/api/groups/{group_id}/payments
+/api/groups/{group_id}/payments/{payment_id}
+/api/groups/{group_id}/settlement
+/health
 ```
 
-期待出力: `HTTP/2 201` + GroupResponse JSON
-- 201 → backend は POST /api/groups を受けている。frontend の baseURL 設定の問題
-- 404 → backend が path を持っていない(deploy 不全 or routing バグ。`flyctl logs -a splai-backend` で原因特定)
+- [ ] **Step 3: 本番ブラウザでグループ作成が成功することを確認**
 
-- [ ] **Step 4: Vercel 本番の env 値を Vercel Dashboard で確認**
+`https://splai-frontend.vercel.app` で create-group form を送信 → 201 → `/g/<uuid>` 遷移 → エラーなし。
 
-`https://vercel.com/<owner>/<project>/settings/environment-variables` を開く:
+### Task 1.6: GitHub Actions で Fly.io への auto-deploy を導入
 
-- `NEXT_PUBLIC_API_BASE_URL`(Production scope)が `https://splai-backend.fly.dev`(末尾スラッシュなし)になっているか
-- `localhost:8000` や frontend URL になっていたら誤設定
+> main へのマージで Fly.io にも自動デプロイされる workflow を追加。Phase 0 plan で「Phase 1+ で導入」と先送りしていた設計を Phase 2 で清算する。
 
-> **末尾スラッシュ注意**: `https://splai-backend.fly.dev/` のように末尾 `/` があると、axios が `${baseURL}/api/groups` で `//api/groups`(二重スラッシュ)を生成し 404 になる。**末尾スラッシュなし**で設定すること。
+**Files:**
 
-- [ ] **Step 5: 値が誤っていたら修正 → 再 deploy**
+- Create: `.github/workflows/deploy-backend.yml`
+- Modify: GitHub Secrets に `FLY_API_TOKEN` を登録
+
+- [ ] **Step 1: Fly.io API token を発行**
 
 ```bash
-# Vercel CLI で書き換え(Dashboard 操作でも可)
-vercel env rm NEXT_PUBLIC_API_BASE_URL production
-vercel env add NEXT_PUBLIC_API_BASE_URL production
-# プロンプトで `https://splai-backend.fly.dev` を入力(末尾スラッシュなし)
-
-# 既存の最新 main commit を再 deploy(env 変更だけだと既存 build には反映されない)
-vercel --prod
-# または Vercel Dashboard → Deployments → 最新を Redeploy
+flyctl tokens create deploy --expiry 8760h -a splai-backend
+# 出力されたトークン(FlyV1 ...)をコピー
 ```
 
-- [ ] **Step 6: 本番ブラウザで疎通確認**
-
-`https://splai-frontend.vercel.app` を開いて create-group form でグループ作成。Console に `[err ...] 404` が出ないこと。
-
-- [ ] **Step 7: コミット(コード変更があれば)**
-
-通常は env 設定の修正のみでコード変更なしなので commit 不要。
-コード側で改善した場合(URL 正規化など)があればその変更だけ:
+- [ ] **Step 2: GitHub Secrets に登録**
 
 ```bash
-git add <changed files>
-git commit -m "fix(frontend): normalize API base URL handling to prevent 404 in production"
+gh secret set FLY_API_TOKEN
+# プロンプトに上記トークンを貼り付け
+```
+
+または GitHub Web UI: `Settings` → `Secrets and variables` → `Actions` → `New repository secret` → Name: `FLY_API_TOKEN`、Value: 上記トークン。
+
+- [ ] **Step 3: deploy workflow 作成**
+
+```yaml
+# .github/workflows/deploy-backend.yml
+name: Deploy Backend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/deploy-backend.yml'
+      - 'fly.toml'
+  workflow_dispatch: # 手動実行も可能に
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    concurrency: deploy-backend # 同時 deploy を 1 つに制限
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Deploy to Fly.io
+        run: flyctl deploy --remote-only -a splai-backend
+        working-directory: backend
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+```
+
+> **`--remote-only`**: Docker build を Fly.io 側で実行(GitHub runner 上で build しない、転送が軽い)。
+> **`concurrency: deploy-backend`**: 短時間に複数 push が来た時に古い deploy が後から上書きされないよう排他制御。
+
+- [ ] **Step 4: workflow を develop に push して動作確認**
+
+```bash
+git add .github/workflows/deploy-backend.yml
+git commit -m "ci(backend): add Fly.io auto-deploy workflow on main push"
+git push origin feature/phase-2-share-experience
+```
+
+PR に含めて develop マージ → main マージで初回 auto deploy が走ることを確認。
+
+- [ ] **Step 5: deploy 後の verification(再掲)**
+
+```bash
+curl -s https://splai-backend.fly.dev/openapi.json \
+  | python3 -c "import sys,json; print(len(json.load(sys.stdin)['paths']))"
+# → 7(Phase 1 endpoints + /health)
+```
+
+---
+
+### Task 1.7: axios timeout を Fly.io cold start に合わせて引き上げ
+
+> Fly.io 無料枠は idle で VM auto-stop。cold start 時は uvicorn / Sentry / asyncpg pool 立ち上げで 5-10s 必要だが、現状の axios timeout は 15000ms。
+> 観測: 本番初回ユーザーが NETWORK error(タイムアウト)を踏み、再試行で成功するパターン。
+> 対処: timeout を 30000ms に拡張して cold start を吸収する。Phase 5 で skeleton UI + 自動 retry を入れるまでの暫定処置。
+
+**Files:**
+
+- Modify: `frontend/lib/api/api-client.ts`
+
+- [ ] **Step 1: timeout 値を更新**
+
+```typescript
+// frontend/lib/api/api-client.ts
+export const apiClient = axios.create({
+  baseURL: env.NEXT_PUBLIC_API_BASE_URL,
+  // Fly.io 無料枠の auto-stop からの cold start(5-10s)を吸収する。
+  // Phase 5 で skeleton UI + 自動 retry を入れたら 15s 等に戻す候補。
+  timeout: 30000,
+});
+```
+
+- [ ] **Step 2: typecheck + test**
+
+```bash
+cd frontend
+npm run typecheck
+npm test
+```
+
+- [ ] **Step 3: コミット**
+
+```bash
+git add frontend/lib/api/api-client.ts
+git commit -m "fix(frontend): extend axios timeout to absorb Fly.io cold start"
 ```
 
 ---
