@@ -14,7 +14,7 @@ const EnvSchema = z.object({
   NEXT_PUBLIC_API_BASE_URL: z.string().url(),
   // 自分自身(Vercel)の URL。Phase 2 で OGP / 共有メッセージ生成に使う予定。
   // Phase 1 では未使用のため optional にしておき、Phase 2 開始時に required へ昇格する。
-  NEXT_PUBLIC_APP_URL: z.string().url().optional(),
+  NEXT_PUBLIC_APP_URL: z.string().url(),
   NEXT_PUBLIC_SENTRY_DSN: z.string().optional(),
 });
 
