@@ -8,6 +8,7 @@
 
 **Tech Stack:** Next.js 16 App Router(`opengraph-image.tsx` / `generateMetadata` / `next/og` `ImageResponse`)、`qrcode.react`(同期 SVG 描画、Client Component)、Web Share API + Clipboard API fallback、LINE Social Plugin URL(`social-plugins.line.me/lineit/share`)、**lefthook**(pre-commit hook で format/lint を CI 前に強制)。
 
+
 ---
 
 ## 前提条件
