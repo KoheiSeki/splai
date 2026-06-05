@@ -8,10 +8,7 @@ import { PaymentForm } from '@/features/payments/components/payment-form';
 import { PaymentList } from '@/features/payments/components/payment-list';
 import { SettlementView } from '@/features/settlement/components/settlement-view';
 import { useState } from 'react';
-// 後の Task で追加されるコンポーネント:
-// import { PaymentForm } from '@/features/payments/components/payment-form';
-// import { PaymentList } from '@/features/payments/components/payment-list';
-// import { SettlementView } from '@/features/settlement/components/settlement-view';
+import { ShareSection } from '@/features/share/components/share-section';
 
 type Props = { groupId: string };
 
@@ -50,7 +47,6 @@ export function GroupDashboard({ groupId }: Props) {
         <p className="font-mono text-xs">{data.members.length}名</p>
       </header>
 
-      {/* Phase 1 後続 Task で埋めていく */}
       <section className="flex flex-col gap-4">
         <PaymentForm
           groupId={groupId}
@@ -73,6 +69,8 @@ export function GroupDashboard({ groupId }: Props) {
           members={data.members}
           refreshKey={refreshKey}
         />
+
+        <ShareSection groupId={data.id} groupName={data.name} />
       </section>
     </main>
   );
