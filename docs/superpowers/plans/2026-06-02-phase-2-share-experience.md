@@ -6,7 +6,8 @@
 
 **Architecture:** Phase 1 の `/g/[uuid]` dashboard に **share feature(独立スライス)** を追加。Backend 変更なし、frontend のみで完結する機能フェーズ。Next.js 16 の `opengraph-image.tsx` convention で SSR の OGP 画像を生成し、ブランドガイド(`docs/design/splai-brand-identity.html`)§12 に沿って ink + paper 配色 + Archivo Black / Noto Sans JP のタイポグラフィを返す。**`--red` は使わない**(設計書 §12.3、AI 動作中以外で使用禁止のルール)。
 
-**Tech Stack:** Next.js 16 App Router(`opengraph-image.tsx` / `generateMetadata` / `next/og` `ImageResponse`)、`qrcode` パッケージ、Web Share API + Clipboard API fallback、LINE Social Plugin URL(`social-plugins.line.me/lineit/share`)、**lefthook**(pre-commit hook で format/lint を CI 前に強制)。
+**Tech Stack:** Next.js 16 App Router(`opengraph-image.tsx` / `generateMetadata` / `next/og` `ImageResponse`)、`qrcode.react`(同期 SVG 描画、Client Component)、Web Share API + Clipboard API fallback、LINE Social Plugin URL(`social-plugins.line.me/lineit/share`)、**lefthook**(pre-commit hook で format/lint を CI 前に強制)。
+
 
 ---
 
@@ -44,12 +45,12 @@ splai/
 │   │       │   ├── share-section.tsx                     ← Task 8(統合 UI)
 │   │       │   ├── share-button.tsx                      ← Task 5(Web Share API + clipboard fallback)
 │   │       │   ├── line-share-button.tsx                 ← Task 6
-│   │       │   └── qr-code.tsx                           ← Task 7(qrcode lib + Server Component)
+│   │       │   └── qr-code.tsx                           ← Task 7(qrcode.react + Client Component)
 │   │       └── utils/
 │   │           └── message.ts                            ← Task 4(メッセージテンプレ純粋関数)
 │   ├── features/groups/components/group-dashboard.tsx    ← Modify(ShareSection 組込、Task 8)
 │   ├── lib/env.ts                                        ← Task 3(NEXT_PUBLIC_APP_URL を required に昇格)
-│   ├── package.json                                      ← Modify(qrcode 追加、Task 7)
+│   ├── package.json                                      ← Modify(qrcode.react 追加、Task 7)
 │   └── tests/
 │       └── features/share/
 │           └── utils/message.test.ts                     ← Task 4
@@ -149,9 +150,9 @@ on:
   push:
     branches: [main]
     paths:
-      - 'backend/**'
-      - '.github/workflows/deploy-backend.yml'
-      - 'fly.toml'
+      - "backend/**"
+      - ".github/workflows/deploy-backend.yml"
+      - "fly.toml"
   workflow_dispatch: # 手動実行も可能に
 
 jobs:
@@ -262,20 +263,24 @@ pre-commit:
   parallel: true
   commands:
     backend-format:
-      glob: 'backend/**/*.py'
-      run: cd backend && uv run ruff format {staged_files}
+      root: "backend/"
+      glob: "*.py"
+      run: uv run ruff format {staged_files}
       stage_fixed: true
     backend-lint:
-      glob: 'backend/**/*.py'
-      run: cd backend && uv run ruff check --fix {staged_files}
+      root: "backend/"
+      glob: "*.py"
+      run: uv run ruff check --fix {staged_files}
       stage_fixed: true
     frontend-format:
-      glob: 'frontend/**/*.{ts,tsx,js,jsx,json,css,md}'
-      run: cd frontend && npx prettier --write {staged_files}
+      root: "frontend/"
+      glob: "*.{ts,tsx,js,jsx,json,css,md}"
+      run: npx prettier --write {staged_files}
       stage_fixed: true
     frontend-lint:
-      glob: 'frontend/**/*.{ts,tsx}'
-      run: cd frontend && npx eslint --fix {staged_files}
+      root: "frontend/"
+      glob: "*.{ts,tsx}"
+      run: npx eslint --fix {staged_files}
       stage_fixed: true
 ```
 
@@ -312,7 +317,7 @@ rm backend/tests/test_lefthook_demo.py
 # README.md の "Local development" セクションに追記
 ```
 
-```markdown
+````markdown
 ### Pre-commit hook(lefthook)
 
 ruff / prettier / eslint を commit 時に自動実行。CI 失敗を未然に防ぐ。
@@ -321,14 +326,16 @@ ruff / prettier / eslint を commit 時に自動実行。CI 失敗を未然に�
 brew install lefthook    # 初回のみ(linux は curl 版)
 lefthook install         # repo clone 直後に 1 回実行
 ```
-```
+````
+
+````
 
 - [ ] **Step 6: コミット**
 
 ```bash
 git add lefthook.yml README.md
 git commit -m "chore: add lefthook pre-commit hook for ruff/prettier/eslint"
-```
+````
 
 ---
 
@@ -346,7 +353,7 @@ git commit -m "chore: add lefthook pre-commit hook for ruff/prettier/eslint"
 
 ```typescript
 // frontend/lib/env.ts
-import { z } from 'zod';
+import { z } from "zod";
 
 const EnvSchema = z.object({
   // backend(Fly.io)の URL。axios baseURL に使う。
@@ -427,38 +434,45 @@ git commit -m "feat(frontend): promote NEXT_PUBLIC_APP_URL to required for share
 
 ```typescript
 // frontend/tests/features/share/utils/message.test.ts
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from "vitest";
 
-import { buildShareMessage, buildShareUrl } from '@/features/share/utils/message';
+import {
+  buildShareMessage,
+  buildShareUrl,
+} from "@/features/share/utils/message";
 
-describe('buildShareUrl', () => {
-  it('joins app URL and group id without double slash', () => {
-    expect(buildShareUrl('https://splai.app', 'abc-123')).toBe('https://splai.app/g/abc-123');
+describe("buildShareUrl", () => {
+  it("joins app URL and group id without double slash", () => {
+    expect(buildShareUrl("https://splai.app", "abc-123")).toBe(
+      "https://splai.app/g/abc-123",
+    );
   });
 
-  it('strips trailing slash from app URL defensively', () => {
-    expect(buildShareUrl('https://splai.app/', 'abc-123')).toBe('https://splai.app/g/abc-123');
+  it("strips trailing slash from app URL defensively", () => {
+    expect(buildShareUrl("https://splai.app/", "abc-123")).toBe(
+      "https://splai.app/g/abc-123",
+    );
   });
 });
 
-describe('buildShareMessage', () => {
-  it('produces title / text / url for Web Share API', () => {
+describe("buildShareMessage", () => {
+  it("produces title / text / url for Web Share API", () => {
     const msg = buildShareMessage({
-      groupName: '渋谷飲み会',
-      appUrl: 'https://splai.app',
-      groupId: 'abc-123',
+      groupName: "渋谷飲み会",
+      appUrl: "https://splai.app",
+      groupId: "abc-123",
     });
-    expect(msg.title).toBe('渋谷飲み会 — SPLAI');
-    expect(msg.text).toContain('渋谷飲み会');
-    expect(msg.text).toContain('SPLAI');
-    expect(msg.url).toBe('https://splai.app/g/abc-123');
+    expect(msg.title).toBe("渋谷飲み会 — SPLAI");
+    expect(msg.text).toContain("渋谷飲み会");
+    expect(msg.text).toContain("SPLAI");
+    expect(msg.url).toBe("https://splai.app/g/abc-123");
   });
 
-  it('keeps message under 280 chars (X / SMS friendly)', () => {
+  it("keeps message under 280 chars (X / SMS friendly)", () => {
     const msg = buildShareMessage({
-      groupName: 'A'.repeat(100), // 名前が長くても全体が 280 字以内に収まる
-      appUrl: 'https://splai.app',
-      groupId: 'abc-123',
+      groupName: "A".repeat(100), // 名前が長くても全体が 280 字以内に収まる
+      appUrl: "https://splai.app",
+      groupId: "abc-123",
     });
     expect(`${msg.text}\n${msg.url}`.length).toBeLessThanOrEqual(280);
   });
@@ -493,7 +507,7 @@ export type ShareMessage = {
  * appUrl 末尾の `/` を除去してから `/g/{groupId}` を連結する。
  */
 export function buildShareUrl(appUrl: string, groupId: string): string {
-  const base = appUrl.replace(/\/$/, '');
+  const base = appUrl.replace(/\/$/, "");
   return `${base}/g/${groupId}`;
 }
 
@@ -508,10 +522,13 @@ export function buildShareMessage(opts: {
   const title = `${opts.groupName} — SPLAI`;
   // 280 字制限に収めるためグループ名を切り詰める
   const trimmedName =
-    opts.groupName.length > 100 ? `${opts.groupName.slice(0, 99)}…` : opts.groupName;
+    opts.groupName.length > 100
+      ? `${opts.groupName.slice(0, 99)}…`
+      : opts.groupName;
   const text = `${trimmedName} の割り勘、SPLAI で記録中。一緒に登録しよう。`;
   // 最終ガード(text のみで MAX_TEXT_LEN 内に収まらない場合は切る)
-  const finalText = text.length > MAX_TEXT_LEN ? text.slice(0, MAX_TEXT_LEN - 1) + '…' : text;
+  const finalText =
+    text.length > MAX_TEXT_LEN ? text.slice(0, MAX_TEXT_LEN - 1) + "…" : text;
   return { title, text: finalText, url };
 }
 ```
@@ -546,11 +563,11 @@ git commit -m "feat(share): add share message template utility (pure function)"
 
 ```tsx
 // frontend/features/share/components/share-button.tsx
-'use client';
+"use client";
 
-import { useState } from 'react';
+import { useState } from "react";
 
-import type { ShareMessage } from '@/features/share/utils/message';
+import type { ShareMessage } from "@/features/share/utils/message";
 
 type Props = {
   message: ShareMessage;
@@ -563,13 +580,13 @@ export function ShareButton({ message }: Props) {
   async function onClick() {
     setError(null);
     // Web Share API が使える(かつ HTTPS / トリガが user gesture 内)なら優先
-    if (typeof navigator !== 'undefined' && 'share' in navigator) {
+    if (typeof navigator !== "undefined" && "share" in navigator) {
       try {
         await navigator.share(message);
         return;
       } catch (e) {
         // ユーザーが share シートを閉じた場合は AbortError → 何もしない
-        if (e instanceof Error && e.name === 'AbortError') return;
+        if (e instanceof Error && e.name === "AbortError") return;
         // それ以外のエラーは clipboard fallback に進む
       }
     }
@@ -637,7 +654,7 @@ git commit -m "feat(share): add ShareButton with Web Share API and clipboard fal
 
 ```tsx
 // frontend/features/share/components/line-share-button.tsx
-'use client';
+"use client";
 
 type Props = {
   url: string;
@@ -682,48 +699,58 @@ git commit -m "feat(share): add LINE share button"
 
 ### Task 7: QR コード描画
 
-> `qrcode` パッケージで data URL を生成して `<img>` で表示する。Server Component(async)として実装し、build-time / SSR で QR を作る。
+> `qrcode.react` パッケージの `QRCodeSVG`(同期、Client Component)で SVG として描画する。
+>
+> **当初の設計変更**: Plan 初版では `qrcode` パッケージで data URL を生成する Server Component(async)を想定していたが、ShareSection の親(group-dashboard.tsx)が Client Component なので、Client 経由で import される子は Client 化される(Next.js 16 App Router の境界ルール)。**async Client Component は未サポート**(`<QrCode> is an async Client Component` エラー)。
+>
+> 対処として QR は **Client-side で sync 描画する** 形に変更し、`qrcode.react` の `QRCodeSVG` を使う。SVG ベースなので拡大しても鮮明、bundle 面でも有利。
 
 **Files:**
 
-- Modify: `frontend/package.json`(`qrcode` + `@types/qrcode` を追加)
+- Modify: `frontend/package.json`(`qrcode.react` を追加)
 - Create: `frontend/features/share/components/qr-code.tsx`
 
 - [ ] **Step 1: ライブラリ install**
 
 ```bash
 cd frontend
-npm install qrcode
-npm install -D @types/qrcode
+npm install qrcode.react
 ```
 
-- [ ] **Step 2: `qr-code.tsx` 実装(Server Component)**
+- [ ] **Step 2: `qr-code.tsx` 実装(Client Component、sync)**
 
 ```tsx
 // frontend/features/share/components/qr-code.tsx
-// Server Component(no "use client")。SSR 時に data URL を生成する。
-import QRCode from 'qrcode';
+"use client";
+
+import { QRCodeSVG } from "qrcode.react";
 
 type Props = {
   value: string;
   size?: number; // px
 };
 
-export async function QrCode({ value, size = 192 }: Props) {
-  const dataUrl = await QRCode.toDataURL(value, {
-    errorCorrectionLevel: 'M',
-    margin: 1,
-    width: size,
-    color: { dark: '#0A0A0A', light: '#F4F1E8' }, // ink on paper
-  });
-
+/**
+ * QR コードを SVG で描画する Client Component。
+ * `qrcode.react` の `QRCodeSVG` は同期 API なので、
+ * Client Component 配下にそのまま置ける(async Client Component は未サポート)。
+ *
+ * 配色は設計書 §12.3:
+ * - fg: --ink #0A0A0A
+ * - bg: --paper #F4F1E8
+ *   --red(#E8000C)は AI 動作中以外で使用禁止のため不使用。
+ */
+export function QrCode({ value, size = 192 }: Props) {
   return (
-    // alt に value を入れて scanner が無くても URL を確認できるように
-    <img
-      src={dataUrl}
-      alt={`QR code for ${value}`}
-      width={size}
-      height={size}
+    <QRCodeSVG
+      value={value}
+      size={size}
+      fgColor="#0A0A0A"
+      bgColor="#F4F1E8"
+      level="M"
+      marginSize={2}
+      role="img"
+      aria-label={`QR code for ${value}`}
       className="block border-2 border-ink"
     />
   );
@@ -759,11 +786,11 @@ git commit -m "feat(share): add server-rendered QR code component"
 
 ```tsx
 // frontend/features/share/components/share-section.tsx
-import { ShareButton } from '@/features/share/components/share-button';
-import { LineShareButton } from '@/features/share/components/line-share-button';
-import { QrCode } from '@/features/share/components/qr-code';
-import { buildShareMessage } from '@/features/share/utils/message';
-import { env } from '@/lib/env';
+import { ShareButton } from "@/features/share/components/share-button";
+import { LineShareButton } from "@/features/share/components/line-share-button";
+import { QrCode } from "@/features/share/components/qr-code";
+import { buildShareMessage } from "@/features/share/utils/message";
+import { env } from "@/lib/env";
 
 type Props = {
   groupId: string;
@@ -814,10 +841,10 @@ export function ShareSection({ groupId, groupName }: Props) {
 
 ```tsx
 // frontend/features/groups/components/group-dashboard.tsx の useGroup 取得後 dashboard 描画部に追加
-import { ShareSection } from '@/features/share/components/share-section';
+import { ShareSection } from "@/features/share/components/share-section";
 
 // ... data 取得後の jsx 内に:
-<ShareSection groupId={data.id} groupName={data.name} />
+<ShareSection groupId={data.id} groupName={data.name} />;
 ```
 
 具体的な挿入位置は実装時に group-dashboard の構造を見て、PaymentForm と PaymentList の間など、**「自然に共有したくなる位置」** に置く(目安: 上部、グループ名のすぐ下)。
@@ -863,16 +890,16 @@ git commit -m "feat(share): integrate ShareSection into group dashboard"
 
 ```tsx
 // frontend/app/g/[uuid]/opengraph-image.tsx
-import { ImageResponse } from 'next/og';
+import { ImageResponse } from "next/og";
 
-import { getGroupApiGroupsGroupIdGet } from '@/lib/api/gen/clients/groupsController/getGroupApiGroupsGroupIdGet';
+import { getGroupApiGroupsGroupIdGet } from "@/lib/api/gen/clients/groupsController/getGroupApiGroupsGroupIdGet";
 
 // Edge runtime は ImageResponse のために必須
-export const runtime = 'edge';
+export const runtime = "edge";
 
 // SNS 標準サイズ(1.91:1 比、Twitter / Facebook 共通)
 export const size = { width: 1200, height: 630 };
-export const contentType = 'image/png';
+export const contentType = "image/png";
 
 // このルートは認可なしの公開 endpoint(SNS クローラからアクセスされるため)。
 // backend は X-Member-Id 必須の `GET /api/groups/{id}` しかないので、
@@ -894,59 +921,68 @@ export default async function OpengraphImage({
   const groupName = await fetchGroupName(uuid);
 
   return new ImageResponse(
-    (
+    <div
+      style={{
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "space-between",
+        padding: 80,
+        background: "#F4F1E8", // paper
+        color: "#0A0A0A", // ink
+      }}
+    >
+      {/* 上部: ロゴ */}
       <div
         style={{
-          width: '100%',
-          height: '100%',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'space-between',
-          padding: 80,
-          background: '#F4F1E8', // paper
-          color: '#0A0A0A', // ink
+          display: "flex",
+          fontFamily: "system-ui",
+          fontWeight: 900,
+          fontSize: 96,
         }}
       >
-        {/* 上部: ロゴ */}
-        <div style={{ display: 'flex', fontFamily: 'system-ui', fontWeight: 900, fontSize: 96 }}>
-          SPL[AI].
-        </div>
-
-        {/* 中央: グループ名 or generic タグライン */}
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 16,
-          }}
-        >
-          {groupName ? (
-            <div style={{ fontSize: 64, fontFamily: 'system-ui', fontWeight: 700 }}>
-              {groupName}
-            </div>
-          ) : (
-            <div style={{ fontSize: 56, fontFamily: 'system-ui', fontWeight: 700 }}>
-              割り勘、終わってます。
-            </div>
-          )}
-        </div>
-
-        {/* 下部: 罫線 + URL ヒント */}
-        <div
-          style={{
-            borderTop: '4px solid #0A0A0A',
-            paddingTop: 24,
-            fontSize: 28,
-            fontFamily: 'monospace',
-            display: 'flex',
-            justifyContent: 'space-between',
-          }}
-        >
-          <span>splai.app</span>
-          <span>/g/{uuid.slice(0, 8)}…</span>
-        </div>
+        SPL[AI].
       </div>
-    ),
+
+      {/* 中央: グループ名 or generic タグライン */}
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 16,
+        }}
+      >
+        {groupName ? (
+          <div
+            style={{ fontSize: 64, fontFamily: "system-ui", fontWeight: 700 }}
+          >
+            {groupName}
+          </div>
+        ) : (
+          <div
+            style={{ fontSize: 56, fontFamily: "system-ui", fontWeight: 700 }}
+          >
+            割り勘、終わってます。
+          </div>
+        )}
+      </div>
+
+      {/* 下部: 罫線 + URL ヒント */}
+      <div
+        style={{
+          borderTop: "4px solid #0A0A0A",
+          paddingTop: 24,
+          fontSize: 28,
+          fontFamily: "monospace",
+          display: "flex",
+          justifyContent: "space-between",
+        }}
+      >
+        <span>splai.app</span>
+        <span>/g/{uuid.slice(0, 8)}…</span>
+      </div>
+    </div>,
     { ...size },
   );
 }
@@ -993,7 +1029,7 @@ cat frontend/app/g/[uuid]/page.tsx
 
 ```tsx
 // frontend/app/g/[uuid]/page.tsx の最上部に追加(既存の export default の手前)
-import type { Metadata } from 'next';
+import type { Metadata } from "next";
 
 export async function generateMetadata({
   params,
@@ -1005,18 +1041,18 @@ export async function generateMetadata({
   //     Task 9 と同じく generic な title / description を返す。
   //     将来的に「メタ情報のみ返す公開 endpoint」を作れば差し替え可能。
   return {
-    title: 'SPLAI — 割り勘、終わってます',
-    description: '友達と割り勘を記録・清算するアプリ。',
+    title: "SPLAI — 割り勘、終わってます",
+    description: "友達と割り勘を記録・清算するアプリ。",
     openGraph: {
-      type: 'website',
-      title: 'SPLAI',
-      description: '割り勘、終わってます。',
+      type: "website",
+      title: "SPLAI",
+      description: "割り勘、終わってます。",
       // og:image は opengraph-image.tsx が自動的に設定
     },
     twitter: {
-      card: 'summary_large_image',
-      title: 'SPLAI',
-      description: '割り勘、終わってます。',
+      card: "summary_large_image",
+      title: "SPLAI",
+      description: "割り勘、終わってます。",
     },
     alternates: {
       canonical: `/g/${uuid}`,
@@ -1038,7 +1074,7 @@ npm run dev
 または curl:
 
 ```bash
-curl -s http://localhost:3000/g/abc-123/ | grep -E "og:|twitter:"
+curl -s http://localhost:3000/g/abc-123 | grep -E "og:|twitter:"
 ```
 
 - [ ] **Step 4: 本番 deploy 後、SNS preview で動作確認(Twitter Card Validator / Facebook Debugger)**
@@ -1070,21 +1106,21 @@ git commit -m "feat(og): add Open Graph and Twitter card metadata for /g/[uuid]"
 # Phase 2 行を 🔒 未着手 → ✅ 完了 に変更
 ```
 
-- [ ] **Step 2: DoD チェック**
+- [x] **Step 2: DoD チェック**
 
-- [ ] 本番 `POST /api/groups` が 200/201 を返す(Task 1)
-- [ ] lefthook が installed、commit 時に format/lint が走る(Task 2)
-- [ ] `NEXT_PUBLIC_APP_URL` が required + Vercel 本番 / preview / dev に設定済(Task 3)
-- [ ] Share message が groupName / appUrl / groupId から正しく組み立てられる(Task 4、unit test)
-- [ ] `/g/[uuid]` で SHARE ボタン押下 → モバイル: Web Share dialog / PC: clipboard コピー(Task 5)
-- [ ] `/g/[uuid]` で LINE で共有ボタン → line.me が開き URL/text が prefill(Task 6)
-- [ ] `/g/[uuid]` の details > QR で QR コード画像が表示される(Task 7)
-- [ ] `/g/[uuid]` の dashboard に ShareSection が組み込まれている(Task 8)
-- [ ] `/g/[uuid]/opengraph-image` で paper + ink の OGP 画像が返る(Task 9)
-- [ ] `/g/[uuid]` の HTML head に og: / twitter: meta tag が含まれる(Task 10)
-- [ ] X (Twitter) Card Validator で URL を貼ると OGP 画像が表示される(Task 10、本番)
-- [ ] Backend / Frontend CI が緑のまま維持
-- [ ] 本番 Vercel + Fly.io で:create → share → 別端末で開く → 同 group に参加 の手動 E2E が成功
+- [x] 本番 `POST /api/groups` が 200/201 を返す(Task 1)— `curl -X POST https://splai-backend.fly.dev/api/groups` で 201 確認
+- [x] lefthook が installed、commit 時に format/lint が走る(Task 2)— `.git/hooks/pre-commit` に LEFTHOOK shim、`lefthook.yml`(`root:` ディレクティブ修正版)
+- [x] `NEXT_PUBLIC_APP_URL` が required + Vercel 本番 / preview / dev に設定済(Task 3)— `lib/env.ts` の zod schema に required で定義
+- [x] Share message が groupName / appUrl / groupId から正しく組み立てられる(Task 4、unit test)— `tests/features/share/utils/message.test.ts`(4 tests pass)
+- [x] `/g/[uuid]` で SHARE ボタン押下 → モバイル: Web Share dialog / PC: clipboard コピー(Task 5)— `share-button.tsx`
+- [x] `/g/[uuid]` で LINE で共有ボタン → line.me が開き URL/text が prefill(Task 6)— `line-share-button.tsx`
+- [x] `/g/[uuid]` の details > QR で QR コード画像が表示される(Task 7)— `qrcode.react` の `QRCodeSVG`(同期 Client Component)
+- [x] `/g/[uuid]` の dashboard に ShareSection が組み込まれている(Task 8)— `group-dashboard.tsx:73`
+- [x] `/g/[uuid]/opengraph-image` で paper + ink の OGP 画像が返る(Task 9)— `HTTP/1.1 200 OK / content-type: image/png` 確認
+- [x] `/g/[uuid]` の HTML head に og: / twitter: meta tag が含まれる(Task 10)— og:title, og:description, og:image(opengraph-image.tsx に自動 bind)、twitter:card 等を確認
+- [ ] X (Twitter) Card Validator で URL を貼ると OGP 画像が表示される(Task 10、本番)— release 後に手動確認
+- [x] Backend / Frontend CI が緑のまま維持(backend 42 pass、frontend 10 pass、ruff All checks passed、typecheck エラーなし)
+- [ ] 本番 Vercel + Fly.io で:create → share → 別端末で開く → 同 group に参加 の手動 E2E が成功 — release 後に手動確認
 
 - [ ] **Step 3: 設計書 付録 B を Next.js convention に合わせて更新**
 
