@@ -1073,7 +1073,7 @@ npm run dev
 または curl:
 
 ```bash
-curl -s http://localhost:3000/g/abc-123/ | grep -E "og:|twitter:"
+curl -s http://localhost:3000/g/abc-123 | grep -E "og:|twitter:"
 ```
 
 - [ ] **Step 4: 本番 deploy 後、SNS preview で動作確認(Twitter Card Validator / Facebook Debugger)**
