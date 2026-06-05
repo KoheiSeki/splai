@@ -6,7 +6,7 @@
 
 **Architecture:** Phase 1 の `/g/[uuid]` dashboard に **share feature(独立スライス)** を追加。Backend 変更なし、frontend のみで完結する機能フェーズ。Next.js 16 の `opengraph-image.tsx` convention で SSR の OGP 画像を生成し、ブランドガイド(`docs/design/splai-brand-identity.html`)§12 に沿って ink + paper 配色 + Archivo Black / Noto Sans JP のタイポグラフィを返す。**`--red` は使わない**(設計書 §12.3、AI 動作中以外で使用禁止のルール)。
 
-**Tech Stack:** Next.js 16 App Router(`opengraph-image.tsx` / `generateMetadata` / `next/og` `ImageResponse`)、`qrcode` パッケージ、Web Share API + Clipboard API fallback、LINE Social Plugin URL(`social-plugins.line.me/lineit/share`)、**lefthook**(pre-commit hook で format/lint を CI 前に強制)。
+**Tech Stack:** Next.js 16 App Router(`opengraph-image.tsx` / `generateMetadata` / `next/og` `ImageResponse`)、`qrcode.react`(同期 SVG 描画、Client Component)、Web Share API + Clipboard API fallback、LINE Social Plugin URL(`social-plugins.line.me/lineit/share`)、**lefthook**(pre-commit hook で format/lint を CI 前に強制)。
 
 ---
 
@@ -44,12 +44,12 @@ splai/
 │   │       │   ├── share-section.tsx                     ← Task 8(統合 UI)
 │   │       │   ├── share-button.tsx                      ← Task 5(Web Share API + clipboard fallback)
 │   │       │   ├── line-share-button.tsx                 ← Task 6
-│   │       │   └── qr-code.tsx                           ← Task 7(qrcode lib + Server Component)
+│   │       │   └── qr-code.tsx                           ← Task 7(qrcode.react + Client Component)
 │   │       └── utils/
 │   │           └── message.ts                            ← Task 4(メッセージテンプレ純粋関数)
 │   ├── features/groups/components/group-dashboard.tsx    ← Modify(ShareSection 組込、Task 8)
 │   ├── lib/env.ts                                        ← Task 3(NEXT_PUBLIC_APP_URL を required に昇格)
-│   ├── package.json                                      ← Modify(qrcode 追加、Task 7)
+│   ├── package.json                                      ← Modify(qrcode.react 追加、Task 7)
 │   └── tests/
 │       └── features/share/
 │           └── utils/message.test.ts                     ← Task 4
@@ -698,48 +698,58 @@ git commit -m "feat(share): add LINE share button"
 
 ### Task 7: QR コード描画
 
-> `qrcode` パッケージで data URL を生成して `<img>` で表示する。Server Component(async)として実装し、build-time / SSR で QR を作る。
+> `qrcode.react` パッケージの `QRCodeSVG`(同期、Client Component)で SVG として描画する。
+>
+> **当初の設計変更**: Plan 初版では `qrcode` パッケージで data URL を生成する Server Component(async)を想定していたが、ShareSection の親(group-dashboard.tsx)が Client Component なので、Client 経由で import される子は Client 化される(Next.js 16 App Router の境界ルール)。**async Client Component は未サポート**(`<QrCode> is an async Client Component` エラー)。
+>
+> 対処として QR は **Client-side で sync 描画する** 形に変更し、`qrcode.react` の `QRCodeSVG` を使う。SVG ベースなので拡大しても鮮明、bundle 面でも有利。
 
 **Files:**
 
-- Modify: `frontend/package.json`(`qrcode` + `@types/qrcode` を追加)
+- Modify: `frontend/package.json`(`qrcode.react` を追加)
 - Create: `frontend/features/share/components/qr-code.tsx`
 
 - [ ] **Step 1: ライブラリ install**
 
 ```bash
 cd frontend
-npm install qrcode
-npm install -D @types/qrcode
+npm install qrcode.react
 ```
 
-- [ ] **Step 2: `qr-code.tsx` 実装(Server Component)**
+- [ ] **Step 2: `qr-code.tsx` 実装(Client Component、sync)**
 
 ```tsx
 // frontend/features/share/components/qr-code.tsx
-// Server Component(no "use client")。SSR 時に data URL を生成する。
-import QRCode from "qrcode";
+"use client";
+
+import { QRCodeSVG } from "qrcode.react";
 
 type Props = {
   value: string;
   size?: number; // px
 };
 
-export async function QrCode({ value, size = 192 }: Props) {
-  const dataUrl = await QRCode.toDataURL(value, {
-    errorCorrectionLevel: "M",
-    margin: 1,
-    width: size,
-    color: { dark: "#0A0A0A", light: "#F4F1E8" }, // ink on paper
-  });
-
+/**
+ * QR コードを SVG で描画する Client Component。
+ * `qrcode.react` の `QRCodeSVG` は同期 API なので、
+ * Client Component 配下にそのまま置ける(async Client Component は未サポート)。
+ *
+ * 配色は設計書 §12.3:
+ * - fg: --ink #0A0A0A
+ * - bg: --paper #F4F1E8
+ *   --red(#E8000C)は AI 動作中以外で使用禁止のため不使用。
+ */
+export function QrCode({ value, size = 192 }: Props) {
   return (
-    // alt に value を入れて scanner が無くても URL を確認できるように
-    <img
-      src={dataUrl}
-      alt={`QR code for ${value}`}
-      width={size}
-      height={size}
+    <QRCodeSVG
+      value={value}
+      size={size}
+      fgColor="#0A0A0A"
+      bgColor="#F4F1E8"
+      level="M"
+      marginSize={2}
+      role="img"
+      aria-label={`QR code for ${value}`}
       className="block border-2 border-ink"
     />
   );
