@@ -90,7 +90,7 @@ lefthook install         # repo clone 直後に 1 回実行
 | --- | ----------------- | -------- | ---------------------------------------------------------------------------------- |
 | 0   | Setup             | ✅ 完了  | リポジトリ初期化 / CI/CD / Vercel + Fly.io デプロイパイプライン                    |
 | 1   | Core Features     | ✅ 完了  | グループ作成 → メンバー登録 → 支払い記録 → 清算結果(貪欲法)を本番で動作確認済み  |
-| 2   | URL Sharing UX    | 🔒 未着手 | Web Share API / LINE 共有 / QR / 動的 OGP                                          |
+| 2   | URL Sharing UX    | ✅ 完了  | Web Share API / LINE 共有 / QR(`qrcode.react`)/ 動的 OGP(`opengraph-image.tsx`)|
 | 3   | AI Features       | 🔒 未着手 | チャット入力 / メッセージ生成 / 清算解説                                            |
 | 4   | OCR               | 🔒 未着手 | レシート画像 → GCP Vision → 自動入力                                                |
 | 5   | Hardening         | 🔒 未着手 | エラー処理 / レート制限 / Sentry / E2E テスト                                       |

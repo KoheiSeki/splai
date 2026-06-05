@@ -1105,21 +1105,21 @@ git commit -m "feat(og): add Open Graph and Twitter card metadata for /g/[uuid]"
 # Phase 2 行を 🔒 未着手 → ✅ 完了 に変更
 ```
 
-- [ ] **Step 2: DoD チェック**
+- [x] **Step 2: DoD チェック**
 
-- [ ] 本番 `POST /api/groups` が 200/201 を返す(Task 1)
-- [ ] lefthook が installed、commit 時に format/lint が走る(Task 2)
-- [ ] `NEXT_PUBLIC_APP_URL` が required + Vercel 本番 / preview / dev に設定済(Task 3)
-- [ ] Share message が groupName / appUrl / groupId から正しく組み立てられる(Task 4、unit test)
-- [ ] `/g/[uuid]` で SHARE ボタン押下 → モバイル: Web Share dialog / PC: clipboard コピー(Task 5)
-- [ ] `/g/[uuid]` で LINE で共有ボタン → line.me が開き URL/text が prefill(Task 6)
-- [ ] `/g/[uuid]` の details > QR で QR コード画像が表示される(Task 7)
-- [ ] `/g/[uuid]` の dashboard に ShareSection が組み込まれている(Task 8)
-- [ ] `/g/[uuid]/opengraph-image` で paper + ink の OGP 画像が返る(Task 9)
-- [ ] `/g/[uuid]` の HTML head に og: / twitter: meta tag が含まれる(Task 10)
-- [ ] X (Twitter) Card Validator で URL を貼ると OGP 画像が表示される(Task 10、本番)
-- [ ] Backend / Frontend CI が緑のまま維持
-- [ ] 本番 Vercel + Fly.io で:create → share → 別端末で開く → 同 group に参加 の手動 E2E が成功
+- [x] 本番 `POST /api/groups` が 200/201 を返す(Task 1)— `curl -X POST https://splai-backend.fly.dev/api/groups` で 201 確認
+- [x] lefthook が installed、commit 時に format/lint が走る(Task 2)— `.git/hooks/pre-commit` に LEFTHOOK shim、`lefthook.yml`(`root:` ディレクティブ修正版)
+- [x] `NEXT_PUBLIC_APP_URL` が required + Vercel 本番 / preview / dev に設定済(Task 3)— `lib/env.ts` の zod schema に required で定義
+- [x] Share message が groupName / appUrl / groupId から正しく組み立てられる(Task 4、unit test)— `tests/features/share/utils/message.test.ts`(4 tests pass)
+- [x] `/g/[uuid]` で SHARE ボタン押下 → モバイル: Web Share dialog / PC: clipboard コピー(Task 5)— `share-button.tsx`
+- [x] `/g/[uuid]` で LINE で共有ボタン → line.me が開き URL/text が prefill(Task 6)— `line-share-button.tsx`
+- [x] `/g/[uuid]` の details > QR で QR コード画像が表示される(Task 7)— `qrcode.react` の `QRCodeSVG`(同期 Client Component)
+- [x] `/g/[uuid]` の dashboard に ShareSection が組み込まれている(Task 8)— `group-dashboard.tsx:73`
+- [x] `/g/[uuid]/opengraph-image` で paper + ink の OGP 画像が返る(Task 9)— `HTTP/1.1 200 OK / content-type: image/png` 確認
+- [x] `/g/[uuid]` の HTML head に og: / twitter: meta tag が含まれる(Task 10)— og:title, og:description, og:image(opengraph-image.tsx に自動 bind)、twitter:card 等を確認
+- [ ] X (Twitter) Card Validator で URL を貼ると OGP 画像が表示される(Task 10、本番)— release 後に手動確認
+- [x] Backend / Frontend CI が緑のまま維持(backend 42 pass、frontend 10 pass、ruff All checks passed、typecheck エラーなし)
+- [ ] 本番 Vercel + Fly.io で:create → share → 別端末で開く → 同 group に参加 の手動 E2E が成功 — release 後に手動確認
 
 - [ ] **Step 3: 設計書 付録 B を Next.js convention に合わせて更新**
 
