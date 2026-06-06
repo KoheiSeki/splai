@@ -5,6 +5,7 @@ integration テスト(test_groups_api 等)で確認する。"""
 from datetime import date
 from uuid import uuid4
 
+from app.models.ai_usage_log import AiUsageLog
 from app.models.group import Group
 from app.models.member import Member
 from app.models.payment import Payment, PaymentSource
@@ -48,3 +49,15 @@ def test_payment_share_types():
         share_value=1.0,
     )
     assert s.share_type == ShareType.EQUAL
+
+
+def test_ai_usage_log_instantiation():
+    log = AiUsageLog(
+        endpoint="chat-payment",
+        model="claude-sonnet-4-6",
+        input_tokens=120,
+        output_tokens=45,
+    )
+    assert log.endpoint == "chat-payment"
+    assert log.input_tokens == 120
+    assert log.output_tokens == 45
