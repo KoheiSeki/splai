@@ -28,8 +28,8 @@ class AiUsageLog(Base):
     )
     endpoint: Mapped[str] = mapped_column(String(50), nullable=False)
     model: Mapped[str] = mapped_column(String(50), nullable=False)
-    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
-    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    prompt_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    completion_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
