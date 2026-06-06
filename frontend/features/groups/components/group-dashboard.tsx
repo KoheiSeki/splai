@@ -14,7 +14,7 @@ type Props = { groupId: string };
 
 export function GroupDashboard({ groupId }: Props) {
   const { memberId, setMemberId } = useMemberStorage(groupId);
-  const { data, isPending, reload } = useGroup(groupId, memberId);
+  const { data, isPending, reload } = useGroup(groupId);
   const [refreshKey, setRefreshKey] = useState(0);
 
   const onChange = () => {
@@ -22,23 +22,20 @@ export function GroupDashboard({ groupId }: Props) {
     setRefreshKey((k) => k + 1);
   };
 
-  // メンバー未選択
+  // ロード中
+  if (isPending && !data) return <p className="font-mono p-8">loading...</p>;
+  // グループが見つからない場合
+  if (!data)
+    return <p className="font-mono p-8">グループが見つかりません。URL を確認してください。</p>;
+
+  // データはある、memberId なし → MemberSelect で「あなたは誰?」
   if (!memberId) {
-    if (isPending) return <p className="font-mono p-8">loading...</p>;
-    if (!data) {
-      // データが無い = まだ取得していない。public 取得 endpoint がないので
-      // Phase 1 では「最低 1 人のメンバーがいる」前提に倒す
-      return <p className="font-mono p-8">グループが見つかりません。URL を確認してください。</p>;
-    }
     return (
       <main className="min-h-screen flex items-center justify-center p-8">
         <MemberSelect groupId={groupId} members={data.members} onSelect={setMemberId} />
       </main>
     );
   }
-
-  // ダッシュボード
-  if (isPending || !data) return <p className="font-mono p-8">loading...</p>;
 
   return (
     <main className="min-h-screen p-8 max-w-2xl mx-auto flex flex-col gap-6">

@@ -29,9 +29,7 @@
     },
     "/api/groups": {
       "post": {
-        "tags": [
-          "groups"
-        ],
+        "tags": ["groups"],
         "summary": "Create Group",
         "description": "グループを新規作成し、初期メンバーも一緒に登録する。\n\n認可なし: グループ作成時はまだ member が存在しないため X-Member-Id を要求しない\n(設計書 §7 共通仕様の例外)。",
         "operationId": "create_group_api_groups_post",
@@ -71,9 +69,7 @@
     },
     "/api/groups/{group_id}": {
       "get": {
-        "tags": [
-          "groups"
-        ],
+        "tags": ["groups"],
         "summary": "Get Group",
         "description": "グループ情報 + メンバー + 未削除の支払い一覧を取得。",
         "operationId": "get_group_api_groups__group_id__get",
@@ -86,16 +82,6 @@
               "type": "string",
               "format": "uuid",
               "title": "Group Id"
-            }
-          },
-          {
-            "name": "X-Member-Id",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "X-Member-Id"
             }
           }
         ],
@@ -125,9 +111,7 @@
     },
     "/api/groups/{group_id}/members": {
       "post": {
-        "tags": [
-          "members"
-        ],
+        "tags": ["members"],
         "summary": "Add Member",
         "operationId": "add_member_api_groups__group_id__members_post",
         "parameters": [
@@ -188,9 +172,7 @@
     },
     "/api/groups/{group_id}/payments": {
       "post": {
-        "tags": [
-          "payments"
-        ],
+        "tags": ["payments"],
         "summary": "Create Payment",
         "description": "支払いを作成するAPI",
         "operationId": "create_payment_api_groups__group_id__payments_post",
@@ -252,9 +234,7 @@
     },
     "/api/groups/{group_id}/payments/{payment_id}": {
       "patch": {
-        "tags": [
-          "payments"
-        ],
+        "tags": ["payments"],
         "summary": "Update Payment",
         "description": "支払いを編集するAPI",
         "operationId": "update_payment_api_groups__group_id__payments__payment_id__patch",
@@ -324,9 +304,7 @@
         }
       },
       "delete": {
-        "tags": [
-          "payments"
-        ],
+        "tags": ["payments"],
         "summary": "Delete Payment",
         "operationId": "delete_payment_api_groups__group_id__payments__payment_id__delete",
         "parameters": [
@@ -380,9 +358,7 @@
     },
     "/api/groups/{group_id}/settlement": {
       "get": {
-        "tags": [
-          "settlement"
-        ],
+        "tags": ["settlement"],
         "summary": "Get Settlement",
         "operationId": "get_settlement_api_groups__group_id__settlement_get",
         "parameters": [
@@ -464,9 +440,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "name"
-        ],
+        "required": ["name"],
         "title": "CreateGroupRequest",
         "description": "グループ作成リクエスト"
       },
@@ -480,9 +454,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "name"
-        ],
+        "required": ["name"],
         "title": "CreateMemberRequest",
         "description": "メンバー作成リクエスト"
       },
@@ -526,11 +498,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "payerId",
-          "amount",
-          "shares"
-        ],
+        "required": ["payerId", "amount", "shares"],
         "title": "CreatePaymentRequest",
         "description": "支払い作成リクエスト"
       },
@@ -636,12 +604,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "id",
-          "groupId",
-          "name",
-          "createdAt"
-        ],
+        "required": ["id", "groupId", "name", "createdAt"],
         "title": "MemberResponse",
         "description": "メンバー情報"
       },
@@ -663,11 +626,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "id",
-          "name",
-          "createdAt"
-        ],
+        "required": ["id", "name", "createdAt"],
         "title": "MemberSummary",
         "description": "メンバー情報"
       },
@@ -698,11 +657,7 @@
           },
           "source": {
             "type": "string",
-            "enum": [
-              "manual",
-              "ocr",
-              "chat"
-            ],
+            "enum": ["manual", "ocr", "chat"],
             "title": "Source"
           },
           "shares": {
@@ -744,10 +699,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "transfers",
-          "netBalances"
-        ],
+        "required": ["transfers", "netBalances"],
         "title": "SettlementResponse",
         "description": "清算結果"
       },
@@ -760,11 +712,7 @@
           },
           "shareType": {
             "type": "string",
-            "enum": [
-              "equal",
-              "ratio",
-              "amount"
-            ],
+            "enum": ["equal", "ratio", "amount"],
             "title": "Sharetype"
           },
           "shareValue": {
@@ -774,11 +722,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "memberId",
-          "shareType",
-          "shareValue"
-        ],
+        "required": ["memberId", "shareType", "shareValue"],
         "title": "ShareInput",
         "description": "支払い共有入力"
       },
@@ -791,11 +735,7 @@
           },
           "shareType": {
             "type": "string",
-            "enum": [
-              "equal",
-              "ratio",
-              "amount"
-            ],
+            "enum": ["equal", "ratio", "amount"],
             "title": "Sharetype"
           },
           "shareValue": {
@@ -804,11 +744,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "memberId",
-          "shareType",
-          "shareValue"
-        ],
+        "required": ["memberId", "shareType", "shareValue"],
         "title": "ShareSummary",
         "description": "支払い共有情報"
       },
@@ -830,11 +766,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "fromId",
-          "toId",
-          "amount"
-        ],
+        "required": ["fromId", "toId", "amount"],
         "title": "TransferDTO",
         "description": "送金情報"
       },
@@ -940,11 +872,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "loc",
-          "msg",
-          "type"
-        ],
+        "required": ["loc", "msg", "type"],
         "title": "ValidationError"
       }
     }

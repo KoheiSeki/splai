@@ -22,7 +22,6 @@ export type {
 export type {
   GetGroupApiGroupsGroupIdGet200,
   GetGroupApiGroupsGroupIdGet422,
-  GetGroupApiGroupsGroupIdGetHeaderParams,
   GetGroupApiGroupsGroupIdGetPathParams,
   GetGroupApiGroupsGroupIdGetQuery,
   GetGroupApiGroupsGroupIdGetQueryResponse,
@@ -100,7 +99,6 @@ export {
 export {
   getGroupApiGroupsGroupIdGet200Schema,
   getGroupApiGroupsGroupIdGet422Schema,
-  getGroupApiGroupsGroupIdGetHeaderParamsSchema,
   getGroupApiGroupsGroupIdGetPathParamsSchema,
   getGroupApiGroupsGroupIdGetQueryResponseSchema,
 } from './zod/groupsController/getGroupApiGroupsGroupIdGetSchema.ts';

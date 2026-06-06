@@ -43,7 +43,21 @@
 
 - 初回アクセス時に「あなたは誰?」を選択(ハイブリッド方式: 作成時に登録 + 後から追加可)
 - 選択結果を `localStorage.setItem('g_${group_id}', member_id)` で保存
-- 全 API 呼び出し時に `X-Member-Id` ヘッダで送信、FastAPI が `group_id` との整合性を検証
+- **書き込み系 API**(POST / PATCH / DELETE)呼び出し時に `X-Member-Id` ヘッダで送信、FastAPI が `group_id` との整合性を検証
+- **読み取り系 API**(GET)は public(URL = 招待リンクの設計上、URL 知っている人なら誰でも参照可)
+
+### 認可ルールの粒度
+
+| 操作 | X-Member-Id 必須 | 理由 |
+| --- | --- | --- |
+| `POST /api/groups`(グループ作成) | ❌ | まだ member が存在しないため |
+| `GET /api/groups/{id}` 系 | ❌ | URL = 招待リンク、参加前ユーザーが MemberSelect を表示する必要がある |
+| `POST /api/groups/{id}/members`(メンバー追加) | ✅ | 既存メンバーが招待行為を行う |
+| `POST/PATCH/DELETE /api/groups/{id}/payments/...` | ✅ | 書き込みは member だけに許す |
+| `GET /api/groups/{id}/settlement` | ❌ | 読み取りなので public(group 全体の状態を共有可)|
+| `POST /api/ai/...` | ✅(原則) | コスト保護のため |
+
+> **設計判断**(Phase 3 で更新): Phase 2 まで「`POST /api/groups` を除く全エンドポイントで X-Member-Id 必須」だったが、URL 共有 → 別端末で `/g/{uuid}` を開く際に新規ユーザーは memberId を持たないため GET が 422 で失敗していた。read を public に開放することで invitation flow が成立する。書き込み権限は引き続き membership で守る。
 
 ---
 
@@ -426,9 +440,11 @@ groups ──┬── members
 
 ### 共通仕様
 
-- `POST /api/groups` を **除く** 全エンドポイントで `X-Member-Id` ヘッダ要求(group_id との整合性を検証)
-  - 例外理由: グループ作成時はまだ member が存在しないため
-  - グループ作成のレスポンスで返される creator_member_id をフロントが localStorage に保存し、以降のリクエストに付与する
+- **`X-Member-Id` 必須は書き込み系のみ**:
+  - 必須: `POST /api/groups/{id}/members` / `POST/PATCH/DELETE /api/groups/{id}/payments/...` / `POST /api/ai/*`
+  - 不要: `POST /api/groups`(まだ member が存在しない)/ `GET /api/groups/{id}` / `GET /api/groups/{id}/settlement`(読み取りは public)
+  - グループ作成のレスポンスで返される creator_member_id をフロントが localStorage に保存し、以降の書き込みリクエストに付与する
+  - URL 共有経由で `/g/{uuid}` を開いた新規ユーザーは、まず GET で参加メンバー一覧を取得 → 名前を選択 → localStorage に member_id を保存 → 書き込み可能になる、という flow になる(§2 参照)
 - 全エンドポイントで `X-Request-Id` ヘッダを尊重(無ければバックエンドで生成)
 - レスポンスは Pydantic モデル → OpenAPI スキーマ → Zod 自動生成
 - エラーレスポンスは RFC 7807(Problem Details)形式に統一

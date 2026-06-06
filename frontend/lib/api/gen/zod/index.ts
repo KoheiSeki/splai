@@ -12,7 +12,6 @@ export {
 export {
   getGroupApiGroupsGroupIdGet200Schema,
   getGroupApiGroupsGroupIdGet422Schema,
-  getGroupApiGroupsGroupIdGetHeaderParamsSchema,
   getGroupApiGroupsGroupIdGetPathParamsSchema,
   getGroupApiGroupsGroupIdGetQueryResponseSchema,
 } from './groupsController/getGroupApiGroupsGroupIdGetSchema.ts';

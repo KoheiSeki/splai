@@ -640,8 +640,11 @@ class GroupResponse(CamelModel):
 ### 8.5 共通ヘッダ
 
 すべての API:
-- リクエスト: `X-Request-Id`(任意、なければ Backend 生成)、`X-Member-Id`(`POST /api/groups` を除く必須)
+- リクエスト: `X-Request-Id`(任意、なければ Backend 生成)
+- リクエスト: `X-Member-Id`(**書き込み系のみ必須** — POST/PATCH/DELETE 系。`POST /api/groups` だけは作成時に member が存在しないため除外。GET / read は public)
 - レスポンス: `X-Request-Id`(常に)
+
+詳細は `docs/superpowers/specs/design.md` §2「認可ルールの粒度」表を参照。
 
 ### 8.6 エラーレスポンス
 

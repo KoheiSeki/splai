@@ -57,7 +57,7 @@ export function MemberSelect({ groupId, members, onSelect }: Props) {
 
   return (
     <div className="flex flex-col gap-4 max-w-sm w-full">
-      <h2 className="font-jp-display text-xl">あなたは誰?</h2>
+      <h2 className="font-jp-display text-xl">ユーザーを選択してください</h2>
 
       {members.length > 0 && (
         <ul className="flex flex-col gap-2">
@@ -76,7 +76,7 @@ export function MemberSelect({ groupId, members, onSelect }: Props) {
       )}
 
       <form onSubmit={onSubmit} className="border-t border-rule-grey pt-3 flex flex-col gap-2">
-        <p className="font-mono text-xs">いない場合は新規追加:</p>
+        <p className="font-mono text-xs">ユーザーがいない場合は新規追加:</p>
         <input
           className="border-2 border-ink p-2 bg-paper font-mono"
           value={newName}
