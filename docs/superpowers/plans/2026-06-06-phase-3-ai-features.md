@@ -4,9 +4,9 @@
 
 **Goal:** AI(Claude Sonnet 4.6 via IBM Consulting Advantage API)を使い、(1) 自然言語チャットで支払いを構造化登録、(2) 清算結果の自然言語解説、(3) 共有メッセージのトーン変換、を提供する。SPLAI のブランド宣言「**SPL**+**AI**」を実機能で裏打ちし、`--red` カラールール(§12.3「AI が動いている瞬間のみ発色」)を実 UX に組み込む。
 
-**Architecture:** Phase 1/2 で完成させた CRUD ベースの上に、**`app/services/ai_gateway.py`** を 1 枚かまして IBM CA API への呼び出しを集約する。SSE(Server-Sent Events)で chat-payment のトークンストリーミングを実装し、frontend は `fetch` + `ReadableStream` で逐次描画 + Tool Use イベント受信時に PaymentForm へ値を流し込む。Anthropic Messages API 互換の Tool Use(`register_payment`)で構造化を強制し、自由記述 → DB 登録までを 1 ステップにする。
+**Architecture:** Phase 1/2 で完成させた CRUD ベースの上に、**`app/services/ai_gateway.py`** を 1 枚かまして IBM Consulting Advantage(以下 ICA、**OpenAI 互換**API)への呼び出しを集約する。SSE(Server-Sent Events)で chat-payment のトークンストリーミングを実装し、frontend は `fetch` + `ReadableStream` で逐次描画 + Tool Calls イベント受信時に PaymentForm へ値を流し込む。OpenAI 互換 Function Calling(`register_payment`)で構造化を強制し、自由記述 → DB 登録までを 1 ステップにする。**backend が ICA OpenAI フォーマットを解釈し、frontend には SPLAI 独自の SSE event 名(`text_delta` / `tool_use` / `done` / `error`)に正規化して流す**ので、AI provider が将来切り替わっても frontend は影響を受けない。
 
-**Tech Stack:** Backend 既存 + **httpx async client**(IBM CA への通信)、**FastAPI `StreamingResponse`** + **`sse-starlette`**(SSE ヘルパ)、Anthropic Messages API 互換の **Tool Use schema**、Frontend は **fetch + ReadableStream + TextDecoder**(EventSource ではなく POST 可能な fetch を使う)、`--red` UI 統合。
+**Tech Stack:** Backend 既存 + **`openai` Python SDK**(`AsyncOpenAI` を `base_url` で ICA に向ける、SSE / tool_calls 累積を SDK 任せに)、**FastAPI `EventSourceResponse`**(`sse-starlette`)、OpenAI 互換 **Function Calling schema**、Frontend は **fetch + ReadableStream + TextDecoder**(EventSource ではなく POST 可能な fetch を使う)、`--red` UI 統合。
 
 ---
 
@@ -400,12 +400,12 @@ def test_ai_usage_log_instantiation():
     log = AiUsageLog(
         endpoint="chat-payment",
         model="claude-sonnet-4-6",
-        input_tokens=120,
-        output_tokens=45,
+        prompt_tokens=120,
+        completion_tokens=45,
     )
     assert log.endpoint == "chat-payment"
-    assert log.input_tokens == 120
-    assert log.output_tokens == 45
+    assert log.prompt_tokens == 120
+    assert log.completion_tokens == 45
 ```
 
 - [ ] **Step 2: テスト失敗確認**
@@ -453,9 +453,10 @@ class AiUsageLog(Base):
     endpoint: Mapped[str] = mapped_column(String(50), nullable=False)
     # 例: "chat-payment", "rewrite-share-message", "explain-settlement"
     model: Mapped[str] = mapped_column(String(50), nullable=False)
-    # 例: "claude-sonnet-4-6"
-    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
-    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    # 例: "claude-sonnet-4-6"(ICA が公開する model id)
+    # OpenAI 互換 API の usage 命名(prompt_tokens / completion_tokens)に揃える。
+    prompt_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    completion_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -514,15 +515,21 @@ git commit -m "feat(db): add ai_usage_logs table for AI call observability"
 
 ---
 
-### Task 3: AI gateway service(IBM CA API client)
+### Task 3: AI gateway service(IBM CA / OpenAI 互換)
 
-> AI 呼び出しを 1 ファイルに集約する **`app/services/ai_gateway.py`**。Anthropic Messages API 互換の signature(IBM CA は内部で Claude を呼ぶ)で、(1) 通常 completion、(2) streaming、(3) Tool Use を扱える wrapper を作る。失敗時は `AIGatewayError` を投げ、`app/exceptions/handlers.py` で 502 にマップ。
+> AI 呼び出しを 1 ファイルに集約する **`app/services/ai_gateway.py`**。
+> ICA は **OpenAI 互換 API**(`/v1/chat/completions` endpoint、`Authorization: Bearer` 認証、`tools: [{type: "function", function: {...}}]` 形式の Function Calling)を提供する。
+> Python 公式の **`openai` SDK** を `base_url=settings.ica_base_url` で ICA に向け、
+> (1) 通常 completion、(2) streaming、(3) Function Calling を扱える wrapper を作る。
+> SDK 任せにすることで SSE parsing / tool_calls の chunk 累積 / retry / timeout の煩雑さを回避する。
+> 失敗時は `AIGatewayError` を投げ、`app/exceptions/handlers.py` で 502 にマップ。
 
 **Files:**
 
 - Modify: `backend/app/exceptions/domain.py`(`AIGatewayError` 追加)
 - Create: `backend/app/services/ai_gateway.py`
 - Create: `backend/tests/test_ai_gateway.py`
+- Modify: `backend/pyproject.toml` / `backend/uv.lock`(`openai` を依存に追加)
 
 - [ ] **Step 1: ドメイン例外を追加**
 
@@ -534,15 +541,29 @@ class AIGatewayError(SplaiError):
     title = "AI Gateway Error"
 ```
 
-- [ ] **Step 2: 失敗するテストを書く**
+- [ ] **Step 2: `openai` SDK を依存追加**
+
+```bash
+cd backend
+uv add openai
+```
+
+> **`openai` SDK は OpenAI 互換 provider に汎用で使える**: `base_url` を渡すだけで ICA / Together AI / Groq / Azure OpenAI など、エンドポイント形式が同一のサービスに同じ SDK で接続できる。SSE parsing と tool_calls の chunk 累積を SDK 側でやってくれるので、httpx 手書きより堅牢。
+
+- [ ] **Step 3: 失敗するテストを書く(`openai` SDK を mock)**
 
 ```python
 # backend/tests/test_ai_gateway.py
-"""ai_gateway.chat_completion の動作を httpx mock で検証する。"""
+"""ai_gateway.chat_completion の動作を openai SDK の mock で検証する。
+
+OpenAI 互換 API の response 形式を模した object を返す。実 SDK の
+ChatCompletion レスポンスと duck typing 互換にしてあるので、production と
+同じ code path が走る。
+"""
+
+from types import SimpleNamespace
 
 import pytest
-import respx
-from httpx import Response
 
 from app.exceptions.domain import AIGatewayError
 from app.services.ai_gateway import ChatMessage, chat_completion
@@ -551,61 +572,92 @@ from app.services.ai_gateway import ChatMessage, chat_completion
 @pytest.fixture(autouse=True)
 def _ica_env(monkeypatch):
     monkeypatch.setenv("IBM_CA_API_KEY", "test-key")
-    monkeypatch.setenv("IBM_CA_BASE_URL", "https://ica.example.com")
+    monkeypatch.setenv("IBM_CA_BASE_URL", "https://ica.example.com/v1")
 
 
-@respx.mock
-async def test_chat_completion_returns_assistant_text():
-    respx.post("https://ica.example.com/v1/messages").mock(
-        return_value=Response(
-            200,
-            json={
-                "content": [{"type": "text", "text": "こんにちは"}],
-                "model": "claude-sonnet-4-6",
-                "usage": {"input_tokens": 10, "output_tokens": 3},
-            },
+def _make_response(text: str, prompt_tokens=10, completion_tokens=3):
+    """OpenAI ChatCompletion response の最小 mock。
+
+    `choices[0].message.{content, tool_calls}` と `usage.{prompt_tokens,
+    completion_tokens}` だけが ai_gateway の参照対象。
+    """
+    return SimpleNamespace(
+        model="claude-sonnet-4-6",
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(content=text, tool_calls=None),
+                finish_reason="stop",
+            )
+        ],
+        usage=SimpleNamespace(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+        ),
+    )
+
+
+async def test_chat_completion_returns_assistant_text(monkeypatch):
+    async def fake_create(*, model, messages, tools=None, **kwargs):
+        return _make_response("こんにちは")
+
+    # AsyncOpenAI().chat.completions.create を差し替える
+    from app.services import ai_gateway
+
+    fake_client = SimpleNamespace(
+        chat=SimpleNamespace(
+            completions=SimpleNamespace(create=fake_create)
         )
     )
-    result = await chat_completion(
-        messages=[ChatMessage(role="user", content="hi")],
-    )
+    monkeypatch.setattr(ai_gateway, "_get_client", lambda: fake_client)
+
+    result = await chat_completion(messages=[ChatMessage(role="user", content="hi")])
     assert result.text == "こんにちは"
     assert result.model == "claude-sonnet-4-6"
-    assert result.usage.input_tokens == 10
+    assert result.usage.prompt_tokens == 10
+    assert result.usage.completion_tokens == 3
 
 
-@respx.mock
-async def test_chat_completion_raises_on_upstream_error():
-    respx.post("https://ica.example.com/v1/messages").mock(
-        return_value=Response(500, json={"error": "internal"})
+async def test_chat_completion_raises_on_upstream_error(monkeypatch):
+    from openai import APIError
+
+    async def fake_create(**kwargs):
+        # APIError は body / response が必須なので最小値を渡す
+        raise APIError(message="upstream 500", request=None, body=None)
+
+    from app.services import ai_gateway
+
+    fake_client = SimpleNamespace(
+        chat=SimpleNamespace(
+            completions=SimpleNamespace(create=fake_create)
+        )
     )
+    monkeypatch.setattr(ai_gateway, "_get_client", lambda: fake_client)
+
     with pytest.raises(AIGatewayError):
         await chat_completion(messages=[ChatMessage(role="user", content="hi")])
 ```
 
-`respx` が無ければ install:
-
-```bash
-cd backend
-uv add --dev respx
-```
-
-- [ ] **Step 3: テスト失敗確認**
+- [ ] **Step 4: テスト失敗確認**
 
 ```bash
 uv run pytest tests/test_ai_gateway.py -v
-# → ModuleNotFoundError
+# → ModuleNotFoundError(app.services.ai_gateway 未作成)
 ```
 
-- [ ] **Step 4: `app/services/ai_gateway.py` を実装**
+- [ ] **Step 5: `app/services/ai_gateway.py` を実装(OpenAI SDK 使用)**
 
 ```python
 # backend/app/services/ai_gateway.py
-"""IBM Consulting Advantage 経由で Claude Sonnet 4.6 を呼ぶゲートウェイ。
+"""IBM Consulting Advantage(OpenAI 互換 API)経由で Claude Sonnet 4.6 を呼ぶ
+ゲートウェイ。
 
-Anthropic Messages API 互換の signature を採用(IBM CA は内部で
-Anthropic API をラップしている前提)。実 endpoint / レスポンス形式が
-異なる場合は `_request` の中だけ差し替えれば外側の interface は維持できる。
+ICA は OpenAI Chat Completions 形式と互換なので、`openai` SDK の AsyncOpenAI を
+`base_url` で ICA エンドポイントに向ける。SDK が SSE parsing / tool_calls
+の chunk 累積 / 型を吸収するので、本ファイルは ICA レスポンスを SPLAI 内部の
+DTO(CompletionResult / StreamEvent)に正規化する責務に絞る。
+
+provider を切り替える場合(例: Anthropic ネイティブに戻す、Azure OpenAI を
+使う)は本ファイルを差し替えるだけで、上位レイヤ(api/ai.py)は無影響。
 """
 from __future__ import annotations
 
@@ -614,12 +666,12 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-import httpx
+from openai import APIError, AsyncOpenAI
 
 from app.config import get_settings
 from app.exceptions.domain import AIGatewayError
 
-DEFAULT_MODEL = "claude-sonnet-4-6"
+DEFAULT_MODEL = "claude-sonnet-4-6"  # ICA が公開する model id(実値は ICA dashboard で確認)
 DEFAULT_MAX_TOKENS = 1024
 DEFAULT_TIMEOUT_S = 60.0
 
@@ -632,66 +684,103 @@ class ChatMessage:
 
 @dataclass(frozen=True)
 class ToolDefinition:
+    """OpenAI Function Calling の入力スキーマ。
+
+    ICA に送る形式は `{"type": "function", "function": {"name", "description",
+    "parameters"}}`。`parameters` は JSON Schema。
+    """
+
     name: str
     description: str
-    input_schema: dict[str, Any]
+    parameters: dict[str, Any]  # JSON Schema(OpenAI では "parameters" と呼ぶ)
 
 
 @dataclass(frozen=True)
 class Usage:
-    input_tokens: int
-    output_tokens: int
+    """OpenAI 互換 usage。Anthropic の input_tokens/output_tokens と概念は同じだが
+    命名が違う(prompt/completion)。SPLAI 内部は OpenAI 命名で統一。"""
+
+    prompt_tokens: int
+    completion_tokens: int
+
+
+@dataclass(frozen=True)
+class ToolCall:
+    """OpenAI Function Calling の結果。arguments は JSON 文字列で SDK から渡される
+    ので、本データクラスでは parse 済みの dict として保持する。"""
+
+    name: str
+    arguments: dict[str, Any]
 
 
 @dataclass
 class CompletionResult:
     """非ストリーミング呼び出しの結果。"""
 
-    text: str
+    text: str  # message.content(tool_calls のみのレスポンスでは "")
     model: str
     usage: Usage
-    tool_uses: list[dict[str, Any]] = field(default_factory=list)
+    tool_calls: list[ToolCall] = field(default_factory=list)
+    finish_reason: str = "stop"  # "stop" | "tool_calls" | "length" | ...
 
 
 @dataclass(frozen=True)
 class StreamEvent:
-    """SSE で流す event の中身。type で payload の意味が決まる。"""
+    """SSE で流す event の中身(SPLAI 内部規約)。
+    type で payload の意味が決まる:
+
+    - text_delta: payload = {"text": "..."}(token 単位の追記)
+    - tool_use: payload = {"name": "register_payment", "input": {...}}
+                (tool_calls 完成時に 1 回だけ発火)
+    - done: payload = {}(stream 完了)
+    - error: payload = {"message": "..."}
+    """
 
     type: Literal["text_delta", "tool_use", "done", "error"]
     payload: dict[str, Any]
 
 
-def _headers() -> dict[str, str]:
-    settings = get_settings()
-    if not settings.ica_api_key:
-        raise AIGatewayError("IBM_CA_API_KEY is not configured")
-    return {
-        "Content-Type": "application/json",
-        "x-api-key": settings.ica_api_key,
-        "anthropic-version": "2023-06-01",  # IBM CA が Anthropic 互換でない場合は調整
-    }
+_client: AsyncOpenAI | None = None
 
 
-def _payload(
-    messages: list[ChatMessage],
-    *,
-    tools: list[ToolDefinition] | None,
-    model: str,
-    max_tokens: int,
-    stream: bool,
-) -> dict[str, Any]:
-    body: dict[str, Any] = {
-        "model": model,
-        "max_tokens": max_tokens,
-        "messages": [{"role": m.role, "content": m.content} for m in messages],
-        "stream": stream,
-    }
-    if tools:
-        body["tools"] = [
-            {"name": t.name, "description": t.description, "input_schema": t.input_schema}
-            for t in tools
-        ]
-    return body
+def _get_client() -> AsyncOpenAI:
+    """AsyncOpenAI を ICA 向けに 1 度だけ初期化してキャッシュ。
+
+    test では monkeypatch.setattr(ai_gateway, "_get_client", ...) で差し替える。
+    """
+    global _client
+    if _client is None:
+        settings = get_settings()
+        if not settings.ica_api_key:
+            raise AIGatewayError("IBM_CA_API_KEY is not configured")
+        if not settings.ica_base_url:
+            raise AIGatewayError("IBM_CA_BASE_URL is not configured")
+        _client = AsyncOpenAI(
+            api_key=settings.ica_api_key,
+            base_url=settings.ica_base_url,  # 例: "https://ica.example.com/v1"
+            timeout=DEFAULT_TIMEOUT_S,
+        )
+    return _client
+
+
+def _to_openai_tools(tools: list[ToolDefinition] | None) -> list[dict[str, Any]] | None:
+    if not tools:
+        return None
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": t.name,
+                "description": t.description,
+                "parameters": t.parameters,
+            },
+        }
+        for t in tools
+    ]
+
+
+def _to_openai_messages(messages: list[ChatMessage]) -> list[dict[str, Any]]:
+    return [{"role": m.role, "content": m.content} for m in messages]
 
 
 async def chat_completion(
@@ -701,48 +790,45 @@ async def chat_completion(
     model: str = DEFAULT_MODEL,
     max_tokens: int = DEFAULT_MAX_TOKENS,
 ) -> CompletionResult:
-    """非ストリーミングで一発呼び出し。Tool Use があれば tool_uses に格納。"""
-    settings = get_settings()
-    base = settings.ica_base_url
-    if not base:
-        raise AIGatewayError("IBM_CA_BASE_URL is not configured")
+    """非ストリーミングで一発呼び出し。Tool Calls があれば tool_calls に格納。"""
+    client = _get_client()
+    try:
+        response = await client.chat.completions.create(
+            model=model,
+            messages=_to_openai_messages(messages),
+            tools=_to_openai_tools(tools),
+            max_tokens=max_tokens,
+        )
+    except APIError as e:
+        raise AIGatewayError(f"upstream API error: {e}") from e
+    except Exception as e:  # noqa: BLE001 — SDK が投げ得る他の例外も吸収
+        raise AIGatewayError(f"upstream connection error: {e}") from e
 
-    body = _payload(messages, tools=tools, model=model, max_tokens=max_tokens, stream=False)
-    url = f"{base.rstrip('/')}/v1/messages"
+    choice = response.choices[0]
+    message = choice.message
+    text = message.content or ""
 
-    async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT_S) as client:
+    tool_calls: list[ToolCall] = []
+    for tc in message.tool_calls or []:
+        # tc.function.arguments は JSON 文字列。SDK は parse してくれない。
         try:
-            resp = await client.post(url, headers=_headers(), json=body)
-        except httpx.HTTPError as e:
-            raise AIGatewayError(f"upstream connection error: {e}") from e
+            args = json.loads(tc.function.arguments) if tc.function.arguments else {}
+        except json.JSONDecodeError as e:
+            raise AIGatewayError(
+                f"tool call arguments are not valid JSON: {tc.function.arguments[:200]}"
+            ) from e
+        tool_calls.append(ToolCall(name=tc.function.name, arguments=args))
 
-    if resp.status_code >= 500:
-        raise AIGatewayError(
-            f"upstream returned {resp.status_code}: {resp.text[:200]}"
-        )
-    if resp.status_code >= 400:
-        raise AIGatewayError(
-            f"upstream rejected request ({resp.status_code}): {resp.text[:200]}"
-        )
-
-    data = resp.json()
-    text_chunks: list[str] = []
-    tool_uses: list[dict[str, Any]] = []
-    for block in data.get("content", []):
-        if block.get("type") == "text":
-            text_chunks.append(block.get("text", ""))
-        elif block.get("type") == "tool_use":
-            tool_uses.append({"name": block["name"], "input": block.get("input", {})})
-
-    usage = data.get("usage", {})
+    usage = response.usage
     return CompletionResult(
-        text="".join(text_chunks),
-        model=data.get("model", model),
+        text=text,
+        model=response.model,
         usage=Usage(
-            input_tokens=usage.get("input_tokens", 0),
-            output_tokens=usage.get("output_tokens", 0),
+            prompt_tokens=usage.prompt_tokens if usage else 0,
+            completion_tokens=usage.completion_tokens if usage else 0,
         ),
-        tool_uses=tool_uses,
+        tool_calls=tool_calls,
+        finish_reason=choice.finish_reason or "stop",
     )
 
 
@@ -755,77 +841,88 @@ async def chat_completion_stream(
 ) -> AsyncIterator[StreamEvent]:
     """SSE ストリーム形式で event を逐次 yield する。
 
-    Anthropic Messages API の SSE 仕様:
-    - event: content_block_delta(text の追記)
-    - event: content_block_start(tool_use ブロック開始)
-    - event: message_stop(終了)
+    OpenAI 互換 API の stream 仕様:
+    - 各 chunk は `choices[0].delta.{content?, tool_calls?}` を持つ
+    - text 系は `delta.content` に token 単位で追記される
+    - tool calls は `delta.tool_calls[*].function.{name?, arguments?}` を **chunk
+      ごとに文字列累積** していき、`finish_reason == "tool_calls"` で完成
+    - 最後の sentinel: `data: [DONE]`(SDK が SSE iteration 終了として吸収)
 
-    本関数では上記を吸収し、SPLAI 内部用の StreamEvent に変換して流す。
+    本関数は OpenAI フォーマットを SPLAI 内部の StreamEvent に正規化:
+    - text_delta: chunk が `delta.content` を持っていたら都度 emit
+    - tool_use: tool_calls が完成(finish_reason == "tool_calls")した時に 1 回 emit
+    - done: stream 完了
+    - error: SDK 例外を error event として emit してから終了
     """
-    settings = get_settings()
-    base = settings.ica_base_url
-    if not base:
-        raise AIGatewayError("IBM_CA_BASE_URL is not configured")
+    client = _get_client()
 
-    body = _payload(messages, tools=tools, model=model, max_tokens=max_tokens, stream=True)
-    url = f"{base.rstrip('/')}/v1/messages"
-    headers = _headers() | {"accept": "text/event-stream"}
+    # tool_calls の累積バッファ。index 別に function.{name, arguments} を文字列で貯める。
+    tool_buf: dict[int, dict[str, str]] = {}
 
-    async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT_S) as client:
-        async with client.stream("POST", url, headers=headers, json=body) as resp:
-            if resp.status_code >= 400:
-                detail = (await resp.aread()).decode("utf-8", errors="ignore")
-                raise AIGatewayError(
-                    f"upstream stream error ({resp.status_code}): {detail[:200]}"
-                )
+    try:
+        stream = await client.chat.completions.create(
+            model=model,
+            messages=_to_openai_messages(messages),
+            tools=_to_openai_tools(tools),
+            max_tokens=max_tokens,
+            stream=True,
+        )
+    except APIError as e:
+        yield StreamEvent(type="error", payload={"message": f"upstream API error: {e}"})
+        return
+    except Exception as e:  # noqa: BLE001
+        yield StreamEvent(type="error", payload={"message": f"upstream connection error: {e}"})
+        return
 
-            async for raw_event in _iter_sse(resp):
-                # raw_event: {"event": "content_block_delta", "data": {...}}
-                event_name = raw_event.get("event", "")
-                payload = raw_event.get("data", {})
+    try:
+        async for chunk in stream:
+            if not chunk.choices:
+                continue
+            choice = chunk.choices[0]
+            delta = choice.delta
 
-                if event_name == "content_block_delta":
-                    delta = payload.get("delta", {})
-                    if delta.get("type") == "text_delta":
-                        yield StreamEvent(type="text_delta", payload={"text": delta.get("text", "")})
-                elif event_name == "content_block_start":
-                    block = payload.get("content_block", {})
-                    if block.get("type") == "tool_use":
+            # text 系: 1 chunk 1 token 程度
+            if delta and delta.content:
+                yield StreamEvent(type="text_delta", payload={"text": delta.content})
+
+            # tool calls 系: chunk ごとに function.name / arguments を累積
+            for tc in delta.tool_calls or []:
+                idx = tc.index if tc.index is not None else 0
+                buf = tool_buf.setdefault(idx, {"name": "", "arguments": ""})
+                if tc.function and tc.function.name:
+                    buf["name"] = tc.function.name
+                if tc.function and tc.function.arguments:
+                    buf["arguments"] += tc.function.arguments
+
+            # 完成判定: finish_reason が "tool_calls" になったら蓄積を emit
+            if choice.finish_reason == "tool_calls":
+                for idx in sorted(tool_buf.keys()):
+                    buf = tool_buf[idx]
+                    try:
+                        args = json.loads(buf["arguments"]) if buf["arguments"] else {}
+                    except json.JSONDecodeError:
+                        # 不正 JSON は error event にして終わる
                         yield StreamEvent(
-                            type="tool_use",
-                            payload={"name": block.get("name"), "input": block.get("input", {})},
+                            type="error",
+                            payload={
+                                "message": f"tool arguments are not valid JSON: "
+                                f"{buf['arguments'][:200]}"
+                            },
                         )
-                elif event_name == "message_stop":
-                    yield StreamEvent(type="done", payload={})
+                        return
+                    yield StreamEvent(
+                        type="tool_use",
+                        payload={"name": buf["name"], "input": args},
+                    )
+                tool_buf.clear()
+    except APIError as e:
+        yield StreamEvent(type="error", payload={"message": f"upstream API error: {e}"})
+        return
 
-
-async def _iter_sse(resp: httpx.Response) -> AsyncIterator[dict[str, Any]]:
-    """`text/event-stream` を 1 event ずつ dict として yield する。
-
-    SSE format:
-        event: <name>\n
-        data: <json>\n
-        \n
-    """
-    event_name = ""
-    data_lines: list[str] = []
-    async for line in resp.aiter_lines():
-        if line == "":
-            if data_lines:
-                try:
-                    payload = json.loads("\n".join(data_lines))
-                except json.JSONDecodeError:
-                    payload = {}
-                yield {"event": event_name, "data": payload}
-            event_name = ""
-            data_lines = []
-        elif line.startswith("event:"):
-            event_name = line[len("event:") :].strip()
-        elif line.startswith("data:"):
-            data_lines.append(line[len("data:") :].strip())
+    yield StreamEvent(type="done", payload={})
 ```
 
-- [ ] **Step 5: テスト実行 → PASS**
+- [ ] **Step 6: テスト実行 → PASS**
 
 ```bash
 uv run pytest tests/test_ai_gateway.py -v
@@ -833,12 +930,20 @@ uv run pytest tests/test_ai_gateway.py -v
 
 期待: 2 passed.
 
-- [ ] **Step 6: コミット**
+- [ ] **Step 7: コミット**
 
 ```bash
 git add backend/app/services/ai_gateway.py backend/app/exceptions/domain.py \
   backend/tests/test_ai_gateway.py backend/pyproject.toml backend/uv.lock
-git commit -m "feat(ai): add ai_gateway service for IBM CA / Claude Sonnet 4.6"
+git commit -m "feat(ai): add ai_gateway service over OpenAI-compatible ICA
+
+ICA は OpenAI Chat Completions 互換 API を提供しているため、openai SDK の
+AsyncOpenAI を base_url=ICA に向けて使う。SDK 側で SSE parsing と tool_calls
+の chunk 累積を吸収できるので、httpx 手書きより堅牢。
+
+API 表面(ChatMessage / ToolDefinition / CompletionResult / StreamEvent)は
+provider 非依存に保ち、実装内部だけで OpenAI フォーマットを SPLAI 内部の
+event 名(text_delta / tool_use / done / error)に正規化する。"
 ```
 
 ---
@@ -912,22 +1017,30 @@ from app.services.ai_gateway import ChatMessage, ToolDefinition
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
+# OpenAI Function Calling 形式の tool 定義(`parameters` は JSON Schema)。
+# ai_gateway.ToolDefinition が内部で {"type": "function", "function": {...}} に
+# 包んで OpenAI SDK に渡す。
 REGISTER_PAYMENT_TOOL = ToolDefinition(
     name="register_payment",
     description=(
         "ユーザーの自然言語入力から割り勘の支払い情報を構造化する。"
-        "amount は整数(円)、shares は等分される member_id のリスト。"
+        "amount は整数(円)、share_member_ids は等分される member_id のリスト。"
     ),
-    input_schema={
+    parameters={
         "type": "object",
         "properties": {
-            "amount": {"type": "integer", "minimum": 1},
-            "description": {"type": "string"},
-            "payer_member_id": {"type": "string", "format": "uuid"},
+            "amount": {"type": "integer", "minimum": 1, "description": "支払額(円)"},
+            "description": {"type": "string", "description": "支払いの内容(店名や用途)"},
+            "payer_member_id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "立て替えたメンバーの member_id",
+            },
             "share_member_ids": {
                 "type": "array",
                 "items": {"type": "string", "format": "uuid"},
                 "minItems": 1,
+                "description": "等分対象のメンバー member_id のリスト",
             },
         },
         "required": ["amount", "description", "payer_member_id", "share_member_ids"],
@@ -1119,7 +1232,7 @@ def mock_completion(monkeypatch):
         return CompletionResult(
             text="集金タイム!",
             model="claude-sonnet-4-6",
-            usage=Usage(input_tokens=20, output_tokens=5),
+            usage=Usage(prompt_tokens=20, completion_tokens=5),
         )
 
     monkeypatch.setattr(ai_gateway, "chat_completion", fake)
@@ -1207,7 +1320,7 @@ def mock_completion(monkeypatch):
         return CompletionResult(
             text="A が 4000 円多く立て替えていたので、B と C から 2000 ずつ受け取れば終わりです。",
             model="claude-sonnet-4-6",
-            usage=Usage(input_tokens=80, output_tokens=30),
+            usage=Usage(prompt_tokens=80, completion_tokens=30),
         )
 
     monkeypatch.setattr(ai_gateway, "chat_completion", fake)

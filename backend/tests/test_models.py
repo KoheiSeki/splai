@@ -55,9 +55,9 @@ def test_ai_usage_log_instantiation():
     log = AiUsageLog(
         endpoint="chat-payment",
         model="claude-sonnet-4-6",
-        input_tokens=120,
-        output_tokens=45,
+        prompt_tokens=120,
+        completion_tokens=45,
     )
     assert log.endpoint == "chat-payment"
-    assert log.input_tokens == 120
-    assert log.output_tokens == 45
+    assert log.prompt_tokens == 120
+    assert log.completion_tokens == 45
