@@ -5,7 +5,11 @@ import json
 from fastapi import APIRouter
 from sse_starlette.sse import EventSourceResponse
 
-from app.schemas.ai import ChatPaymentRequest
+from app.schemas.ai import (
+    ChatPaymentRequest,
+    RewriteShareMessageRequest,
+    RewriteShareMessageResponse,
+)
 from app.services import ai_gateway
 from app.services.ai_gateway import ChatMessage, ToolDefinition
 
@@ -40,6 +44,20 @@ REGISTER_PAYMENT_TOOL = ToolDefinition(
         "required": ["amount", "description", "payer_member_id", "share_member_ids"],
     },
 )
+
+"""共有メッセージ編集のプロンプト"""
+REWRITE_SYSTEM_BASE = (
+    "あなたは SPLAI(割り勘アプリ)の共有メッセージ編集アシスタントです。"
+    "短く、リンクを開きたくなるような文に書き換えてください。"
+    "結果のみを返し、説明や前置きは入れないこと。"
+)
+
+"""共有メッセージのトーン"""
+REWRITE_TONE_DIRECTIVE = {
+    "casual": "カジュアルで友人同士のテンションで(例:「割り勘やろ〜!」)",
+    "polite": "丁寧で礼儀正しく(例:「お会計のご共有です」)",
+    "playful": "遊び心のある言い回しで(例:「集金タイム!」)",
+}
 
 
 def _build_system_message(members: list[dict[str, str]]) -> str:
@@ -76,3 +94,17 @@ async def chat_payment(body: ChatPaymentRequest) -> EventSourceResponse:
             yield {"event": "error", "data": json.dumps({"message": str(e)})}
 
     return EventSourceResponse(event_generator())
+
+
+@router.post("/rewrite-share-message", response_model=RewriteShareMessageResponse)
+async def rewrite_share_message(body: RewriteShareMessageRequest) -> EventSourceResponse:
+    """共有メッセージをAIで編集する関数（非ストリーム）"""
+
+    system = f"{REWRITE_SYSTEM_BASE}\nトーン: {REWRITE_TONE_DIRECTIVE[body.tone]}"
+    messages = [
+        ChatMessage(role="system", content=system),
+        ChatMessage(role="user", content=body.text),
+    ]
+    result = await ai_gateway.chat_completion(messages)
+
+    return RewriteShareMessageResponse(rewritten=result.text.strip())
