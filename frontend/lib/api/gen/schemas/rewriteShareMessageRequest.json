@@ -1,0 +1,16 @@
+{
+  "properties": {
+    "text": { "type": "string", "title": "Text" },
+    "tone": {
+      "type": "string",
+      "enum": ["casual", "polite", "playful"],
+      "title": "Tone",
+      "default": "casual"
+    }
+  },
+  "type": "object",
+  "required": ["text"],
+  "title": "RewriteShareMessageRequest",
+  "description": "グループ共有メッセージのAIによる編集リクエスト",
+  "x-readme-ref-name": "RewriteShareMessageRequest"
+}
