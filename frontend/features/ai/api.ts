@@ -1,5 +1,11 @@
 'use client';
 
+import { explainSettlementApiAiExplainSettlementPost } from '@/lib/api/gen';
+import {
+  ExplainSettlementApiAiExplainSettlementPostMutationRequest,
+  ExplainSettlementApiAiExplainSettlementPostMutationResponse,
+  ExplainSettlementResponse,
+} from '@/lib/api/gen/types';
 import { env } from '@/lib/env';
 import { generateRequestId } from '@/lib/request-id';
 
@@ -14,6 +20,9 @@ export type ChatPaymentEvent =
   | { type: 'tool_use'; name: string; input: Record<string, unknown> }
   | { type: 'done' }
   | { type: 'error'; message: string };
+
+export type ExplainSettlementInput = ExplainSettlementApiAiExplainSettlementPostMutationRequest;
+export type ExplainSettlementResult = ExplainSettlementApiAiExplainSettlementPostMutationResponse;
 
 export async function* streamChatPayment(
   input: ChatPaymentInput,
@@ -133,4 +142,15 @@ function parseSseBlock(block: string): ChatPaymentEvent | null {
     default:
       return null;
   }
+}
+
+/**
+ * 精算内容説明APIを呼び出す
+ * @param input 精算内容説明リクエスト
+ * @returns 精算内容説明レスポンス
+ */
+export async function explainSettlement(
+  input: ExplainSettlementInput,
+): Promise<ExplainSettlementResponse> {
+  return explainSettlementApiAiExplainSettlementPost(input);
 }
