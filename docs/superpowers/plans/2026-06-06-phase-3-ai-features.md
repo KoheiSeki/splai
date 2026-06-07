@@ -4,9 +4,9 @@
 
 **Goal:** AI(Claude Sonnet 4.6 via IBM Consulting Advantage API)を使い、(1) 自然言語チャットで支払いを構造化登録、(2) 清算結果の自然言語解説、(3) 共有メッセージのトーン変換、を提供する。SPLAI のブランド宣言「**SPL**+**AI**」を実機能で裏打ちし、`--red` カラールール(§12.3「AI が動いている瞬間のみ発色」)を実 UX に組み込む。
 
-**Architecture:** Phase 1/2 で完成させた CRUD ベースの上に、**`app/services/ai_gateway.py`** を 1 枚かまして IBM Consulting Advantage(以下 ICA、**OpenAI 互換**API)への呼び出しを集約する。SSE(Server-Sent Events)で chat-payment のトークンストリーミングを実装し、frontend は `fetch` + `ReadableStream` で逐次描画 + Tool Calls イベント受信時に PaymentForm へ値を流し込む。OpenAI 互換 Function Calling(`register_payment`)で構造化を強制し、自由記述 → DB 登録までを 1 ステップにする。**backend が ICA OpenAI フォーマットを解釈し、frontend には SPLAI 独自の SSE event 名(`text_delta` / `tool_use` / `done` / `error`)に正規化して流す**ので、AI provider が将来切り替わっても frontend は影響を受けない。
+**Architecture:** Phase 1/2 で完成させた CRUD ベースの上に、**`app/services/ai_gateway.py`** を 1 枚かまして IBM Consulting Advantage(以下 ICA、**OpenAI 互換**API)への呼び出しを集約する。SSE(Server-Sent Events)で chat-payment のトークンストリーミングを実装し、frontend は `fetch` + `ReadableStream` で逐次描画 + Tool Calls イベント受信時に PaymentForm へ値を流し込む。**sse-starlette は CRLF(`\r\n\r\n`) でイベント区切りするため、frontend 側で正規化必須。** OpenAI 互換 Function Calling(`register_payment`)で構造化を強制し、自由記述 → DB 登録までを 1 ステップにする。**backend が ICA OpenAI フォーマットを解釈し、frontend には SPLAI 独自の SSE event 名(`text_delta` / `tool_use` / `done` / `error`)に正規化して流す**ので、AI provider が将来切り替わっても frontend は影響を受けない。
 
-**Tech Stack:** Backend 既存 + **`openai` Python SDK**(`AsyncOpenAI` を `base_url` で ICA に向ける、SSE / tool_calls 累積を SDK 任せに)、**FastAPI `EventSourceResponse`**(`sse-starlette`)、OpenAI 互換 **Function Calling schema**、Frontend は **fetch + ReadableStream + TextDecoder**(EventSource ではなく POST 可能な fetch を使う)、`--red` UI 統合。
+**Tech Stack:** Backend 既存 + **`openai` Python SDK**(`AsyncOpenAI` を `base_url` で ICA に向ける、SSE / tool_calls 累積を SDK 任せに)、**FastAPI `EventSourceResponse`**(`sse-starlette`)、OpenAI 互換 **Function Calling schema**、Frontend は Phase 1 同様 **kubb 生成型 + client**(JSON endpoint) + **`fetch` + ReadableStream + TextDecoder**(`chat-payment` SSE のみ kubb client 不可)、`--red` UI 統合。
 
 ---
 
@@ -47,9 +47,10 @@ splai/
 │   │   ├── models/
 │   │   │   └── ai_usage_log.py                  ← Task 2(新規)
 │   │   ├── schemas/
-│   │   │   └── ai.py                            ← Task 4-6(Request/Response/SSE Event)
+│   │   │   └── ai.py                            ← Task 4-6(Request/Response)
 │   │   ├── exceptions/domain.py                 ← Modify(AIGatewayError 追加)
 │   │   └── main.py                              ← Modify(api/ai.py を include)
+│   ├── openapi.json                             ← Task 6.5(再生成)
 │   └── tests/
 │       ├── test_groups_api.py                   ← Modify(Task 1: public read のテスト追加)
 │       ├── test_ai_gateway.py                   ← Task 3(httpx mock)
@@ -57,9 +58,10 @@ splai/
 │       ├── test_ai_rewrite.py                   ← Task 5
 │       └── test_ai_explain_settlement.py        ← Task 6
 ├── frontend/
+│   ├── lib/api/gen/clients/aiController/        ← Task 6.5(kubb 再生成)
 │   ├── features/
 │   │   ├── ai/                                  ← Task 7-9 で新規 feature
-│   │   │   ├── api.ts                           ← AI 系 API ラッパ + SSE consumer
+│   │   │   ├── api.ts                           ← kubb wrapper + SSE consumer(fetch)
 │   │   │   ├── components/
 │   │   │   │   ├── payment-chat.tsx             ← Task 7(自然言語入力 + Tool Use)
 │   │   │   │   ├── settlement-explanation.tsx   ← Task 8
@@ -79,7 +81,7 @@ splai/
         └── 2026-06-06-phase-3-ai-features.md    ← 本ファイル
 ```
 
-> **`features/ai/` 配置方針(規約 §6.5)**: AI チャット入力 / 解説 / rewrite は **AI ドメインの 1 機能群**で、payments / settlement / share という既存 feature の境界を横断する。AI 呼び出し基盤(SSE consumer / api wrapper)を 1 箇所にまとめ、各 feature の component から call する形が自然なので独立 feature とする。
+> **`features/ai/` 配置方針(規約 §6.5)**: AI チャット入力 / 解説 / rewrite は **AI ドメインの 1 機能群**で、payments / settlement / share という既存 feature の境界を横断する。AI 呼び出し基盤(SSE consumer / kubb api wrapper)を 1 箇所にまとめ、各 feature の component から call する形が自然なので独立 feature とする。JSON endpoint は kubb 生成 client を薄くラップ、`chat-payment` SSE のみ fetch + ReadableStream(**CRLF 正規化付き SSE parser**)。
 
 ---
 
@@ -992,7 +994,7 @@ class RewriteShareMessageResponse(CamelModel):
 
 class ExplainSettlementRequest(CamelModel):
     members: list[dict[str, str]]  # [{"id": "...", "name": "..."}, ...]
-    transfers: list[dict[str, Any]]  # settlement の Transfer
+    transfers: list[TransferDTO]  # settlement の Transfer
     net_balances: dict[str, int]
 
 
@@ -1331,15 +1333,15 @@ async def test_explain_settlement(client: AsyncClient, mock_completion):
         "/api/ai/explain-settlement",
         json={
             "members": [
-                {"id": "a", "name": "A"},
-                {"id": "b", "name": "B"},
-                {"id": "c", "name": "C"},
+                {"id": "00000000-0000-0000-0000-000000000001", "name": "A"},
+                {"id": "00000000-0000-0000-0000-000000000002", "name": "B"},
+                {"id": "00000000-0000-0000-0000-000000000003", "name": "C"},
             ],
             "transfers": [
-                {"fromId": "b", "toId": "a", "amount": 2000},
-                {"fromId": "c", "toId": "a", "amount": 2000},
+                {"fromId": "00000000-0000-0000-0000-000000000002", "toId": "00000000-0000-0000-0000-000000000001", "amount": 2000},
+                {"fromId": "00000000-0000-0000-0000-000000000003", "toId": "00000000-0000-0000-0000-000000000001", "amount": 2000},
             ],
-            "netBalances": {"a": 4000, "b": -2000, "c": -2000},
+            "netBalances": {"00000000-0000-0000-0000-000000000001": 4000, "00000000-0000-0000-0000-000000000002": -2000, "00000000-0000-0000-0000-000000000003": -2000},
         },
     )
     assert res.status_code == 200
@@ -1357,24 +1359,74 @@ git commit -m "feat(api): add POST /api/ai/explain-settlement"
 
 ---
 
+### Task 6.5: OpenAPI 再生成 + Frontend kubb codegen(AI endpoints)
+
+> Task 4–6 で追加した 3 本の AI endpoint を OpenAPI / kubb に反映する。**Task 7 以降の frontend 実装は kubb 生成型 + client を前提**とする(Phase 1 §Task 14 規約)。`chat-payment` は SSE のため HTTP 本体は fetch + ReadableStream を使い、**リクエスト型のみ kubb から取る**。
+
+**Files:**
+
+- Modify: `backend/openapi.json`(再生成)
+- Modify: `frontend/lib/api/gen/*`(再生成)
+
+- [ ] **Step 1: openapi.json を再生成**
+
+```bash
+cd backend
+APP_ENV=test uv run python scripts/dump_openapi.py
+```
+
+`openapi.json` の `paths` に以下 3 本が載っていることを確認:
+
+- `POST /api/ai/chat-payment`
+- `POST /api/ai/rewrite-share-message`
+- `POST /api/ai/explain-settlement`
+
+- [ ] **Step 2: Frontend kubb を再生成**
+
+```bash
+cd frontend
+npm run codegen
+```
+
+`lib/api/gen/clients/aiController/` に以下が生成されていることを確認:
+
+- `chatPaymentApiAiChatPaymentPost.ts`
+- `rewriteShareMessageApiAiRewriteShareMessagePost.ts`
+- `explainSettlementApiAiExplainSettlementPost.ts`
+
+- [ ] **Step 3: コミット**
+
+```bash
+git add backend/openapi.json frontend/lib/api/gen/
+git commit -m "chore(api): regenerate OpenAPI and kubb clients for AI endpoints"
+```
+
+---
+
 ### Task 7: Frontend AI チャット入力 UI(SSE 受信 + Tool Use 反映)
 
-> PaymentForm と並ぶ「もう 1 つの入力経路」として `PaymentChat` を追加。`/g/[uuid]` の dashboard で **タブ切り替え**(「フォーム入力」 / 「AI 入力」)で出し分ける。AI が `tool_use` イベントを返したら、その input を PaymentForm の初期値として埋めて、ユーザーが内容を確認した上で保存する(誤生成のガードのため自動保存はしない)。
+> **前提: Task 6.5 完了**(kubb codegen 済み)。PaymentForm と並ぶ「もう 1 つの入力経路」として `PaymentChat` を追加。`/g/[uuid]` の dashboard で **タブ切り替え**(「フォーム入力」 / 「AI 入力」)で出し分ける。AI が `tool_use` イベントを返したら、その input を PaymentForm の初期値として埋めて、ユーザーが内容を確認した上で保存する(誤生成のガードのため自動保存はしない)。
 
 **Files:**
 
 - Create: `frontend/features/ai/api.ts`
 - Create: `frontend/features/ai/components/payment-chat.tsx`
+- Create: `frontend/tests/features/ai/api.test.ts`(SSE parser ユニットテスト)
 - Modify: `frontend/features/groups/components/group-dashboard.tsx`
 - Modify: `frontend/features/payments/components/payment-form.tsx`(初期値受け入れ)
 
 - [ ] **Step 1: SSE consumer + AI api wrapper**
+
+> **kubb 配置方針**: リクエスト型は kubb 生成(`ChatPaymentApiAiChatPaymentPostMutationRequest`)を re-export する( Task 6.5 後)。SSE レスポンスは OpenAPI で表現できないため `ChatPaymentEvent` は feature 側ドメイン型として手書きする。**HTTP 本体は kubb 生成 client(axios)ではなく fetch + ReadableStream** — axios はブラウザで chunk 単位の SSE 読み取りに非対応。`X-Request-Id` は他 API と同様に付与する。
+>
+> **CRLF 注意(sse-starlette)**: backend の `EventSourceResponse` は `\r\n\r\n` でイベント区切りする。frontend 側で `\n\n` だけを探すと **イベント 0 件でサイレント終了**する(エラー event すら UI に出ない)。chunk 受信時に `\r\n` → `\n` 正規化すること。
 
 ```typescript
 // frontend/features/ai/api.ts
 "use client";
 
 import { env } from "@/lib/env";
+import { generateRequestId } from "@/lib/request-id";
 
 export type ChatPaymentInput = {
   groupId: string;
@@ -1388,10 +1440,6 @@ export type ChatPaymentEvent =
   | { type: "done" }
   | { type: "error"; message: string };
 
-/**
- * /api/ai/chat-payment への SSE POST。AsyncGenerator で event を逐次 yield する。
- * ブラウザ標準の EventSource は GET のみなので、fetch + ReadableStream を使う。
- */
 export async function* streamChatPayment(
   input: ChatPaymentInput,
   signal?: AbortSignal,
@@ -1402,6 +1450,7 @@ export async function* streamChatPayment(
     headers: {
       "Content-Type": "application/json",
       Accept: "text/event-stream",
+      "X-Request-Id": generateRequestId(),
     },
     body: JSON.stringify(input),
     signal,
@@ -1415,17 +1464,59 @@ export async function* streamChatPayment(
   let buffer = "";
   while (true) {
     const { done, value } = await reader.read();
-    if (done) return;
-    buffer += decoder.decode(value, { stream: true });
-    // SSE は "\n\n" 区切り
-    let idx;
-    while ((idx = buffer.indexOf("\n\n")) >= 0) {
-      const block = buffer.slice(0, idx).trim();
-      buffer = buffer.slice(idx + 2);
-      const event = parseSseBlock(block);
-      if (event) yield event;
+    if (value) {
+      buffer += normalizeSseChunk(decoder.decode(value, { stream: true }));
+    }
+
+    yield* drainSseBufferEvents(buffer, (next) => {
+      buffer = next;
+    });
+
+    if (done) {
+      yield* flushSseBufferTail(buffer);
+      return;
     }
   }
+}
+
+/** sse-starlette / uvicorn が返す CRLF を LF に正規化する */
+function normalizeSseChunk(chunk: string): string {
+  return chunk.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+}
+
+function* drainSseBufferEvents(
+  buffer: string,
+  setBuffer: (next: string) => void,
+): Generator<ChatPaymentEvent> {
+  let rest = buffer;
+  let idx;
+  while ((idx = rest.indexOf("\n\n")) >= 0) {
+    const block = rest.slice(0, idx).trim();
+    rest = rest.slice(idx + 2);
+    const event = parseSseBlock(block);
+    if (event) yield event;
+  }
+  setBuffer(rest);
+}
+
+function* flushSseBufferTail(buffer: string): Generator<ChatPaymentEvent> {
+  const tail = buffer.trim();
+  if (!tail) return;
+  const event = parseSseBlock(tail);
+  if (event) yield event;
+}
+
+/** テスト用: SSE 本文全体をパースする */
+export function parseSseStreamBody(body: string): ChatPaymentEvent[] {
+  let buffer = normalizeSseChunk(body);
+  const events: ChatPaymentEvent[] = [];
+  for (const event of drainSseBufferEvents(buffer, (next) => {
+    buffer = next;
+  })) {
+    events.push(event);
+  }
+  events.push(...flushSseBufferTail(buffer));
+  return events;
 }
 
 function parseSseBlock(block: string): ChatPaymentEvent | null {
@@ -1462,6 +1553,48 @@ function parseSseBlock(block: string): ChatPaymentEvent | null {
   }
 }
 ```
+
+- [ ] **Step 1-b: SSE parser ユニットテスト**
+
+```typescript
+// frontend/tests/features/ai/api.test.ts
+import { describe, expect, it } from "vitest";
+
+import { parseSseStreamBody } from "@/features/ai/api";
+
+describe("parseSseStreamBody", () => {
+  it("parses sse-starlette CRLF events", () => {
+    const body =
+      'event: text_delta\r\n' +
+      'data: {"text": "了解"}\r\n' +
+      "\r\n" +
+      "event: done\r\n" +
+      "data: {}\r\n" +
+      "\r\n";
+    expect(parseSseStreamBody(body)).toEqual([
+      { type: "text_delta", text: "了解" },
+      { type: "done" },
+    ]);
+  });
+
+  it("parses error events from upstream failures", () => {
+    const body =
+      "event: error\r\n" +
+      'data: {"message": "upstream API error: budget exceeded"}\r\n' +
+      "\r\n";
+    expect(parseSseStreamBody(body)).toEqual([
+      { type: "error", message: "upstream API error: budget exceeded" },
+    ]);
+  });
+});
+```
+
+```bash
+cd frontend
+npm test -- tests/features/ai/api.test.ts
+```
+
+期待: 2 passed。
 
 - [ ] **Step 2: PaymentChat コンポーネント**
 
@@ -1644,35 +1777,58 @@ const [tab, setTab] = useState<"form" | "chat">("form");
   >
     AI CHAT
   </button>
-</div>;
+</div>
 
-{
-  tab === "chat" ? (
-    <PaymentChat
-      groupId={groupId}
-      members={data.members}
-      onDraft={(d) => {
-        setDraft(d);
-        setTab("form"); // 入力後はフォームに切り替えて確認させる
-      }}
-    />
-  ) : (
-    <PaymentForm
-      groupId={groupId}
-      memberId={memberId}
-      members={data.members}
-      onCreated={onChange}
-      draft={draft ?? undefined}
-    />
-  );
-}
+{tab === "chat" ? (
+  <PaymentChat
+    groupId={groupId}
+    members={data.members}
+    onDraft={(d) => {
+      setDraft(d);
+      setTab("form"); // 入力後はフォームに切り替えて確認させる
+    }}
+  />
+) : (
+  <PaymentForm
+    groupId={groupId}
+    memberId={memberId}
+    members={data.members}
+    onCreated={onChange}
+    draft={draft ?? undefined}
+  />
+)}
+
+{/* 以降 PaymentList / SettlementView / ShareSection は三項の外(同じ <section> 内) */}
 ```
+
+> **JSX 注意**: 三項演算子の閉じは `)}` である。`);` + `}` と書くとパースエラーになり、以降の `<PaymentList>` が return の外に出る。
 
 - [ ] **Step 5: 動作確認**
 
+**Step 5-A: End-to-end 疎通(ICA budget 超過でも可)**
+
 ```bash
-# ローカル backend(IBM_CA_API_KEY 必要)+ frontend
-# /g/<uuid> → "AI CHAT" タブ → 「居酒屋 12000 円、A が払って B C と 3 等分」と入力 → 送信
+# ローカル backend(ICA_API_KEY / ICA_BASE_URL 設定済) + frontend
+# /g/<uuid> → "AI CHAT" タブ → プロンプト入力 → 送信
+```
+
+Network タブで確認:
+
+| 確認項目 | 期待 |
+|---------|------|
+| Status | 200 OK |
+| Content-Type | `text/event-stream` |
+| Response / EventStream | `event: error` または `event: text_delta` 等が見える |
+
+UI で確認:
+
+- ICA budget 超過時: **`event: error` が UI の赤文字エラーとして表示される** → frontend ↔ backend ↔ ICA の通信経路は確立
+- `streamChatPayment` は raw fetch のため **Console に `[req ...]` ログは出ない**(axios/kubb client 非使用)。Network タブで確認する
+
+**Step 5-B: 正常系(ICA budget 内)**
+
+```bash
+# 同じ手順で再送信
 # 期待:
 # - AI 動作中ボタンが --red 発色 + "AI が考え中..." 表示
 # - text_delta が transcript に流れる
@@ -1684,6 +1840,7 @@ const [tab, setTab] = useState<"form" | "chat">("form");
 
 ```bash
 git add frontend/features/ai/ \
+  frontend/tests/features/ai/api.test.ts \
   frontend/features/groups/components/group-dashboard.tsx \
   frontend/features/payments/components/payment-form.tsx
 git commit -m "feat(ai): add AI chat-payment input UI with SSE streaming and Tool Use draft"
@@ -1702,23 +1859,25 @@ git commit -m "feat(ai): add AI chat-payment input UI with SSE streaming and Too
 
 - [ ] **Step 1: api wrapper 追加**
 
+> Phase 1 §Task 14 規約: kubb 生成 client を薄くラップ。型定義の重複は禁止。
+
 ```typescript
 // frontend/features/ai/api.ts に追加
-import { env } from "@/lib/env";
+import { explainSettlementApiAiExplainSettlementPost } from "@/lib/api/gen/clients/aiController/explainSettlementApiAiExplainSettlementPost";
+import type {
+  ExplainSettlementApiAiExplainSettlementPostMutationRequest,
+  ExplainSettlementApiAiExplainSettlementPostMutationResponse,
+} from "@/lib/api/gen/types/aiController/ExplainSettlementApiAiExplainSettlementPost";
 
-export async function explainSettlement(input: {
-  members: { id: string; name: string }[];
-  transfers: { fromId: string; toId: string; amount: number }[];
-  netBalances: Record<string, number>;
-}): Promise<{ explanation: string }> {
-  const url = `${env.NEXT_PUBLIC_API_BASE_URL.replace(/\/$/, "")}/api/ai/explain-settlement`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+export type ExplainSettlementInput =
+  ExplainSettlementApiAiExplainSettlementPostMutationRequest;
+export type ExplainSettlementResult =
+  ExplainSettlementApiAiExplainSettlementPostMutationResponse;
+
+export async function explainSettlement(
+  input: ExplainSettlementInput,
+): Promise<ExplainSettlementResult> {
+  return explainSettlementApiAiExplainSettlementPost(input);
 }
 ```
 
@@ -1796,22 +1955,27 @@ git commit -m "feat(ai): add AI settlement explanation in SettlementView"
 
 - [ ] **Step 1: api wrapper**
 
+> Phase 1 §Task 14 規約: kubb 生成 client を薄くラップ。`Tone` は kubb 生成 enum から re-export。
+
 ```typescript
 // frontend/features/ai/api.ts に追加
-export type Tone = "casual" | "polite" | "playful";
+import { rewriteShareMessageApiAiRewriteShareMessagePost } from "@/lib/api/gen/clients/aiController/rewriteShareMessageApiAiRewriteShareMessagePost";
+import type {
+  RewriteShareMessageApiAiRewriteShareMessagePostMutationRequest,
+  RewriteShareMessageApiAiRewriteShareMessagePostMutationResponse,
+} from "@/lib/api/gen/types/aiController/RewriteShareMessageApiAiRewriteShareMessagePost";
+import type { RewriteShareMessageRequestToneEnumKey } from "@/lib/api/gen/types/RewriteShareMessageRequest";
 
-export async function rewriteShareMessage(input: {
-  text: string;
-  tone: Tone;
-}): Promise<{ rewritten: string }> {
-  const url = `${env.NEXT_PUBLIC_API_BASE_URL.replace(/\/$/, "")}/api/ai/rewrite-share-message`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+export type RewriteShareMessageInput =
+  RewriteShareMessageApiAiRewriteShareMessagePostMutationRequest;
+export type RewriteShareMessageResult =
+  RewriteShareMessageApiAiRewriteShareMessagePostMutationResponse;
+export type Tone = RewriteShareMessageRequestToneEnumKey;
+
+export async function rewriteShareMessage(
+  input: RewriteShareMessageInput,
+): Promise<RewriteShareMessageResult> {
+  return rewriteShareMessageApiAiRewriteShareMessagePost(input);
 }
 ```
 
@@ -1977,7 +2141,10 @@ Phase 3 行を 🔒 未着手 → ✅ 完了 に変更。
 - [ ] 別ブラウザで URL を開くと MemberSelect が表示される
 - [ ] `ai_usage_logs` テーブルが本番 DB に存在
 - [ ] `app/services/ai_gateway.py` が IBM CA API 経由で `chat_completion` / `chat_completion_stream` を実行できる
-- [ ] `POST /api/ai/chat-payment` が SSE で text_delta + tool_use + done を返す
+- [ ] `frontend/lib/api/gen/clients/aiController/` に AI endpoint の kubb client が生成されている(Task 6.5)
+- [ ] `frontend/tests/features/ai/api.test.ts` が CRLF SSE parser を検証している(2 passed)
+- [ ] `POST /api/ai/chat-payment` が SSE で text_delta + tool_use + done を返す(または `event: error` で ICA 疎通確認)
+- [ ] AI CHAT タブで ICA upstream エラー(`event: error`)が UI に表示される(疎通確認)
 - [ ] `POST /api/ai/rewrite-share-message` が指定トーンで書き換えた text を返す
 - [ ] `POST /api/ai/explain-settlement` が清算結果を自然言語で説明
 - [ ] `/g/[uuid]` の AI CHAT タブで自然言語入力 → PaymentForm に draft が入る
@@ -2018,7 +2185,8 @@ Phase 4 主題は「OCR 機能(GCP Vision 統合 / 非同期ジョブ / 確認�
 
 ### Frontend
 
-- ✅ `features/ai/` 独立 feature(api wrapper + SSE consumer)
+- ✅ `features/ai/` 独立 feature(api wrapper + **CRLF 正規化付き** SSE consumer)
+- ✅ `tests/features/ai/api.test.ts`(sse-starlette CRLF / error event パース)
 - ✅ `PaymentChat`(自然言語入力 → AI Tool Use → PaymentForm draft)
 - ✅ Settlement view 解説機能
 - ✅ Share section tone rewrite
