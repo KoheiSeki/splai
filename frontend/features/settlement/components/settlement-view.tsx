@@ -64,7 +64,7 @@ export function SettlementView({ groupId, memberId, members, refreshKey }: Props
   // 初回ロード中(まだデータが無い)は loading 表示。
   // データ取得済みの再 fetch 中は古いデータを表示し続ける(stale-while-revalidate)。
   if (isPending && !data) return <p className="font-mono text-xs">loading...</p>;
-  if (error) return <p className="font-mono text-xs text-red">error: {String(error)}</p>;
+  if (error) return <p className="font-mono text-xs text-ink">error: {String(error)}</p>;
   if (!data) return null;
 
   return (
@@ -105,7 +105,7 @@ export function SettlementView({ groupId, memberId, members, refreshKey }: Props
           <p className="font-jp-editorial text-sm whitespace-pre-wrap">{explainState.text}</p>
         )}
         {explainState.error && (
-          <p role="alert" className="text-red font-mono text-xs">
+          <p role="alert" className="text-ink font-mono text-xs">
             {explainState.error}
           </p>
         )}
