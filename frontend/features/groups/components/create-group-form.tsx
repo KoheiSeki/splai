@@ -91,7 +91,7 @@ export function CreateGroupForm() {
       </button>
 
       {state.error && (
-        <p role="alert" className="text-red font-mono text-xs">
+        <p role="alert" className="text-ink font-mono text-xs">
           {state.error}
         </p>
       )}

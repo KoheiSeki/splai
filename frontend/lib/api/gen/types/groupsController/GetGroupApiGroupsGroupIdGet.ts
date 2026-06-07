@@ -13,13 +13,6 @@ export type GetGroupApiGroupsGroupIdGetPathParams = {
   group_id: string;
 };
 
-export type GetGroupApiGroupsGroupIdGetHeaderParams = {
-  /**
-   * @type string, uuid
-   */
-  'X-Member-Id': string;
-};
-
 /**
  * GroupResponse
  * @description Successful Response
@@ -37,6 +30,5 @@ export type GetGroupApiGroupsGroupIdGetQueryResponse = GetGroupApiGroupsGroupIdG
 export type GetGroupApiGroupsGroupIdGetQuery = {
   Response: GetGroupApiGroupsGroupIdGet200;
   PathParams: GetGroupApiGroupsGroupIdGetPathParams;
-  HeaderParams: GetGroupApiGroupsGroupIdGetHeaderParams;
   Errors: GetGroupApiGroupsGroupIdGet422;
 };

@@ -5,9 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.deps import require_member
 from app.db.session import get_session
-from app.models import Member
 from app.schemas.group import CreateGroupRequest, GroupResponse, MemberSummary
 from app.schemas.payment import PaymentSummary, ShareSummary
 from app.services import groups as groups_service
@@ -43,7 +41,6 @@ async def create_group(
 @router.get("/{group_id}", response_model=GroupResponse)
 async def get_group(
     group_id: UUID,
-    member: Member = Depends(require_member),
     db: AsyncSession = Depends(get_session),
 ) -> GroupResponse:
     """グループ情報 + メンバー + 未削除の支払い一覧を取得。"""

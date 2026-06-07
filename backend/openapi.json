@@ -87,16 +87,6 @@
               "format": "uuid",
               "title": "Group Id"
             }
-          },
-          {
-            "name": "X-Member-Id",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "X-Member-Id"
-            }
           }
         ],
         "responses": {
@@ -430,10 +420,164 @@
           }
         }
       }
+    },
+    "/api/ai/chat-payment": {
+      "post": {
+        "tags": [
+          "ai"
+        ],
+        "summary": "Chat Payment",
+        "description": "自然言語 → register_payment ツール呼び出しの SSE 配信。",
+        "operationId": "chat_payment_api_ai_chat_payment_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatPaymentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ai/rewrite-share-message": {
+      "post": {
+        "tags": [
+          "ai"
+        ],
+        "summary": "Rewrite Share Message",
+        "description": "共有メッセージをAIで編集する関数（非ストリーム）",
+        "operationId": "rewrite_share_message_api_ai_rewrite_share_message_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RewriteShareMessageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RewriteShareMessageResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ai/explain-settlement": {
+      "post": {
+        "tags": [
+          "ai"
+        ],
+        "summary": "Explain Settlement",
+        "operationId": "explain_settlement_api_ai_explain_settlement_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainSettlementRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExplainSettlementResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "ChatPaymentRequest": {
+        "properties": {
+          "groupId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Groupid"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "members": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Members"
+          }
+        },
+        "type": "object",
+        "required": [
+          "groupId",
+          "text",
+          "members"
+        ],
+        "title": "ChatPaymentRequest",
+        "description": "自然言語で支払い登録の構造化を依頼するリクエスト。\n(aiとのチャットでの支払い登録リクエスト)"
+      },
       "CreateGroupRequest": {
         "properties": {
           "name": {
@@ -533,6 +677,56 @@
         ],
         "title": "CreatePaymentRequest",
         "description": "支払い作成リクエスト"
+      },
+      "ExplainSettlementRequest": {
+        "properties": {
+          "members": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Members"
+          },
+          "transfers": {
+            "items": {
+              "$ref": "#/components/schemas/TransferDTO"
+            },
+            "type": "array",
+            "title": "Transfers"
+          },
+          "netBalances": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Netbalances"
+          }
+        },
+        "type": "object",
+        "required": [
+          "members",
+          "transfers",
+          "netBalances"
+        ],
+        "title": "ExplainSettlementRequest",
+        "description": "清算結果のAIによる説明リクエスト"
+      },
+      "ExplainSettlementResponse": {
+        "properties": {
+          "explanation": {
+            "type": "string",
+            "title": "Explanation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "explanation"
+        ],
+        "title": "ExplainSettlementResponse",
+        "description": "清算結果のAIによる説明レスポンス"
       },
       "GroupResponse": {
         "properties": {
@@ -725,6 +919,44 @@
         ],
         "title": "PaymentSummary",
         "description": "支払い情報。\n\n`shares` は backend が常に返すので default を持たせない\n(= OpenAPI required → frontend TS 型でも non-optional)。"
+      },
+      "RewriteShareMessageRequest": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "casual",
+              "polite",
+              "playful"
+            ],
+            "title": "Tone",
+            "default": "casual"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "title": "RewriteShareMessageRequest",
+        "description": "グループ共有メッセージのAIによる編集リクエスト"
+      },
+      "RewriteShareMessageResponse": {
+        "properties": {
+          "rewritten": {
+            "type": "string",
+            "title": "Rewritten"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rewritten"
+        ],
+        "title": "RewriteShareMessageResponse",
+        "description": "グループ共有メッセージのAIによる編集レスポンス"
       },
       "SettlementResponse": {
         "properties": {

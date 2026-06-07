@@ -1,0 +1,8 @@
+{
+  "properties": { "rewritten": { "type": "string", "title": "Rewritten" } },
+  "type": "object",
+  "required": ["rewritten"],
+  "title": "RewriteShareMessageResponse",
+  "description": "グループ共有メッセージのAIによる編集レスポンス",
+  "x-readme-ref-name": "RewriteShareMessageResponse"
+}

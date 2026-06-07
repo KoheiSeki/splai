@@ -10,6 +10,12 @@ type Props = {
   memberId: string;
   members: Member[];
   onCreated: () => void;
+  draft?: {
+    payerId: string;
+    amount: number;
+    description: string;
+    shareMemberIds: string[]; // ← 等分対象
+  };
 };
 
 type FormState = { error: string | null };
@@ -20,10 +26,10 @@ type Payload = {
   description: string;
 };
 
-export function PaymentForm({ groupId, memberId, members, onCreated }: Props) {
-  const [payerId, setPayerId] = useState(memberId);
-  const [amount, setAmount] = useState('');
-  const [description, setDescription] = useState('');
+export function PaymentForm({ groupId, memberId, members, onCreated, draft }: Props) {
+  const [payerId, setPayerId] = useState(draft?.payerId ?? memberId);
+  const [amount, setAmount] = useState(draft ? String(draft.amount) : '');
+  const [description, setDescription] = useState(draft?.description ?? '');
 
   const [state, submit, isPending] = useActionState<FormState, Payload>(
     async (_prev, payload) => {
@@ -117,7 +123,7 @@ export function PaymentForm({ groupId, memberId, members, onCreated }: Props) {
       </button>
 
       {state.error && (
-        <p role="alert" className="text-red font-mono text-xs">
+        <p role="alert" className="text-ink font-mono text-xs">
           {state.error}
         </p>
       )}

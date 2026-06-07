@@ -8,7 +8,6 @@ export type {
 export type {
   GetGroupApiGroupsGroupIdGet200,
   GetGroupApiGroupsGroupIdGet422,
-  GetGroupApiGroupsGroupIdGetHeaderParams,
   GetGroupApiGroupsGroupIdGetPathParams,
   GetGroupApiGroupsGroupIdGetQuery,
   GetGroupApiGroupsGroupIdGetQueryResponse,

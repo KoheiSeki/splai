@@ -53,17 +53,46 @@ async def test_get_group_returns_full_payload(client: AsyncClient):
     assert body["payments"] == []
 
 
-async def test_get_group_returns_422_when_member_id_header_missing(client: AsyncClient):
-    """X-Member-Id header が無い場合、FastAPI が 422(認可前のバリデーション)を返す。"""
+async def test_get_group_returns_404_when_group_not_found_without_x_member_id(
+    client: AsyncClient,
+):
+    """GET は public read。X-Member-Id 不要。存在しない group_id は 404。"""
     res = await client.get(f"/api/groups/{uuid.UUID(int=0)}")
-    assert res.status_code == 422
+    assert res.status_code == 404
 
 
-async def test_get_group_returns_401_when_member_not_in_group(client: AsyncClient):
+async def test_get_group_returns_200_even_with_bogus_x_member_id(client: AsyncClient):
+    """GET は public read。X-Member-Id が不正でも read は拒否しない(Phase 3 Task 1)。"""
     create_res = await client.post("/api/groups", json={"name": "g1", "memberNames": ["A"]})
     gid = create_res.json()["id"]
 
-    # 存在しない member_id で叩く
     bogus = "00000000-0000-0000-0000-000000000000"
     res = await client.get(f"/api/groups/{gid}", headers={"X-Member-Id": bogus})
-    assert res.status_code == 401
+    assert res.status_code == 200
+    assert res.json()["id"] == gid
+
+
+async def test_get_group_returns_200_without_x_member_id(client: AsyncClient):
+    """X-Member-Id を渡さなくても GET できる(public read)。
+    設計上 URL = 招待リンクなので、read は誰でも可能にする。"""
+    create_res = await client.post("/api/groups", json={"name": "public", "memberNames": ["Alice"]})
+    gid = create_res.json()["id"]
+
+    res = await client.get(f"/api/groups/{gid}")  # ← header なし
+    assert res.status_code == 200
+    body = res.json()
+    assert body["name"] == "public"
+    assert len(body["members"]) == 1
+
+
+async def test_get_group_returns_same_data_with_or_without_x_member_id(client: AsyncClient):
+    create_res = await client.post("/api/groups", json={"name": "compat", "memberNames": ["A"]})
+    gid = create_res.json()["id"]
+    creator_mid = create_res.json()["creatorMemberId"]
+
+    with_auth = await client.get(f"/api/groups/{gid}", headers={"X-Member-Id": creator_mid})
+    without_auth = await client.get(f"/api/groups/{gid}")
+
+    assert with_auth.status_code == 200
+    assert without_auth.status_code == 200
+    assert with_auth.json() == without_auth.json()

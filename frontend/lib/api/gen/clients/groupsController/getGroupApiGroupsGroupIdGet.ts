@@ -7,7 +7,6 @@ import fetch from '@/lib/api/kubb-client';
 import type {
   GetGroupApiGroupsGroupIdGetQueryResponse,
   GetGroupApiGroupsGroupIdGetPathParams,
-  GetGroupApiGroupsGroupIdGetHeaderParams,
   GetGroupApiGroupsGroupIdGet422,
 } from '../../types/groupsController/GetGroupApiGroupsGroupIdGet.ts';
 import type { Client, RequestConfig, ResponseErrorConfig } from '@/lib/api/kubb-client';
@@ -26,7 +25,6 @@ function getGetGroupApiGroupsGroupIdGetUrl(
  */
 export async function getGroupApiGroupsGroupIdGet(
   group_id: GetGroupApiGroupsGroupIdGetPathParams['group_id'],
-  headers: GetGroupApiGroupsGroupIdGetHeaderParams,
   config: Partial<RequestConfig> & { client?: Client } = {},
 ) {
   const { client: request = fetch, ...requestConfig } = config;
@@ -39,7 +37,6 @@ export async function getGroupApiGroupsGroupIdGet(
     method: 'GET',
     url: getGetGroupApiGroupsGroupIdGetUrl(group_id).url.toString(),
     ...requestConfig,
-    headers: { ...headers, ...requestConfig.headers },
   });
   return res.data;
 }

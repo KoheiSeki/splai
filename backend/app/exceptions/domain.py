@@ -38,3 +38,9 @@ class InvalidPaymentShares(SplaiError):
     status_code: int = 400
     type_slug: str = "invalid-payment-shares"
     title: str = "Invalid Payment Shares"
+
+
+class AIGatewayError(SplaiError):
+    status_code: int = 502
+    type_slug: str = "ai-gateway-error"
+    title: str = "AI Gateway Error"

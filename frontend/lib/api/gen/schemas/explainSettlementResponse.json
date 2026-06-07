@@ -1,0 +1,8 @@
+{
+  "properties": { "explanation": { "type": "string", "title": "Explanation" } },
+  "type": "object",
+  "required": ["explanation"],
+  "title": "ExplainSettlementResponse",
+  "description": "清算結果のAIによる説明レスポンス",
+  "x-readme-ref-name": "ExplainSettlementResponse"
+}
