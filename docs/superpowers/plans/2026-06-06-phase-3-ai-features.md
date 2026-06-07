@@ -1040,7 +1040,7 @@ REGISTER_PAYMENT_TOOL = ToolDefinition(
                 "type": "array",
                 "items": {"type": "string", "format": "uuid"},
                 "minItems": 1,
-                "description": "等分対象のメンバー member_id のリスト",
+                "description": "支払いを分担するメンバー member_id のリスト",
             },
         },
         "required": ["amount", "description", "payer_member_id", "share_member_ids"],
