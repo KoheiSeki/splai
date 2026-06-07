@@ -7,6 +7,8 @@ from sse_starlette.sse import EventSourceResponse
 
 from app.schemas.ai import (
     ChatPaymentRequest,
+    ExplainSettlementRequest,
+    ExplainSettlementResponse,
     RewriteShareMessageRequest,
     RewriteShareMessageResponse,
 )
@@ -59,6 +61,15 @@ REWRITE_TONE_DIRECTIVE = {
     "playful": "遊び心のある言い回しで(例:「集金タイム!」)",
 }
 
+"""清算結果の説明のプロンプト"""
+EXPLAIN_SYSTEM = (
+    "あなたは SPLAI の清算結果説明アシスタントです。"
+    "メンバー一覧、ネット収支、送金リストを受け取り、"
+    "全員にとって分かりやすい清算サマリを 3-4 文で書いてください。"
+    "誰がいくら多く立て替えていたか、最終的に誰が誰にいくら払えばよいかを"
+    "明示すること。"
+)
+
 
 def _build_system_message(members: list[dict[str, str]]) -> str:
     """支払い登録のプロンプトを作成する関数"""
@@ -108,3 +119,18 @@ async def rewrite_share_message(body: RewriteShareMessageRequest) -> EventSource
     result = await ai_gateway.chat_completion(messages)
 
     return RewriteShareMessageResponse(rewritten=result.text.strip())
+
+
+@router.post("/explain-settlement", response_model=ExplainSettlementResponse)
+async def explain_settlement(body: ExplainSettlementRequest) -> ExplainSettlementResponse:
+    user_content = (
+        f"メンバー: {body.members}\n"
+        f"ネット収支(プラス=受取、マイナス=支払): {body.net_balances}\n"
+        f"送金リスト: {body.transfers}"
+    )
+    messages = [
+        ChatMessage(role="system", content=EXPLAIN_SYSTEM),
+        ChatMessage(role="user", content=user_content),
+    ]
+    result = await ai_gateway.chat_completion(messages)
+    return ExplainSettlementResponse(explanation=result.text.strip())

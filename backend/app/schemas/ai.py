@@ -4,6 +4,7 @@ from typing import Literal
 from uuid import UUID
 
 from app.schemas.base import CamelModel
+from app.schemas.settlement import TransferDTO
 
 
 class ChatPaymentRequest(CamelModel):
@@ -36,7 +37,7 @@ class ExplainSettlementRequest(CamelModel):
     """清算結果のAIによる説明リクエスト"""
 
     members: list[dict[str, str]]  # [{"id": "...", "name": "..."}, ...]
-    transfers: list[dict[str, int]]  # settlement の Transfer
+    transfers: list[TransferDTO]  # settlement の Transfer
     net_balances: dict[str, int]
 
 
