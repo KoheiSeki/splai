@@ -1,0 +1,35 @@
+{
+  "properties": {
+    "members": {
+      "items": { "additionalProperties": { "type": "string" }, "type": "object" },
+      "type": "array",
+      "title": "Members"
+    },
+    "transfers": {
+      "items": {
+        "properties": {
+          "fromId": { "type": "string", "format": "uuid", "title": "Fromid" },
+          "toId": { "type": "string", "format": "uuid", "title": "Toid" },
+          "amount": { "type": "integer", "title": "Amount" }
+        },
+        "type": "object",
+        "required": ["fromId", "toId", "amount"],
+        "title": "TransferDTO",
+        "description": "送金情報",
+        "x-readme-ref-name": "TransferDTO"
+      },
+      "type": "array",
+      "title": "Transfers"
+    },
+    "netBalances": {
+      "additionalProperties": { "type": "integer" },
+      "type": "object",
+      "title": "Netbalances"
+    }
+  },
+  "type": "object",
+  "required": ["members", "transfers", "netBalances"],
+  "title": "ExplainSettlementRequest",
+  "description": "清算結果のAIによる説明リクエスト",
+  "x-readme-ref-name": "ExplainSettlementRequest"
+}

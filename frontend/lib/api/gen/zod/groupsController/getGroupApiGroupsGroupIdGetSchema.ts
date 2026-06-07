@@ -6,7 +6,6 @@
 import type {
   GetGroupApiGroupsGroupIdGet200,
   GetGroupApiGroupsGroupIdGet422,
-  GetGroupApiGroupsGroupIdGetHeaderParams,
   GetGroupApiGroupsGroupIdGetPathParams,
   GetGroupApiGroupsGroupIdGetQueryResponse,
 } from '../../types/groupsController/GetGroupApiGroupsGroupIdGet.ts';
@@ -17,10 +16,6 @@ import { z } from 'zod/v4';
 export const getGroupApiGroupsGroupIdGetPathParamsSchema = z.object({
   group_id: z.uuid(),
 }) as unknown as z.ZodType<GetGroupApiGroupsGroupIdGetPathParams>;
-
-export const getGroupApiGroupsGroupIdGetHeaderParamsSchema = z.object({
-  'X-Member-Id': z.uuid(),
-}) as unknown as z.ZodType<GetGroupApiGroupsGroupIdGetHeaderParams>;
 
 /**
  * @description Successful Response

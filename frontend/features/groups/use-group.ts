@@ -22,25 +22,22 @@ export type GroupData = GetGroupApiGroupsGroupIdGetQueryResponse;
  * - `isPending`: 再取得中かどうか
  * - `reload()`: 手動再取得トリガ。mutation 後に呼ぶ
  */
-export function useGroup(groupId: string, memberId: string | null) {
+export function useGroup(groupId: string) {
   const [data, setData] = useState<GroupData | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [isPending, startTransition] = useTransition();
 
   const reload = useCallback(() => {
-    if (!memberId) return;
     startTransition(async () => {
       try {
-        const res = await getGroupApiGroupsGroupIdGet(groupId, {
-          'X-Member-Id': memberId,
-        });
+        const res = await getGroupApiGroupsGroupIdGet(groupId);
         setData(res);
         setError(null);
       } catch (e) {
         setError(e);
       }
     });
-  }, [groupId, memberId]);
+  }, [groupId]);
 
   useEffect(() => {
     reload();

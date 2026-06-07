@@ -1,3 +1,6 @@
+export { chatPaymentApiAiChatPaymentPost } from './aiController/chatPaymentApiAiChatPaymentPost.ts';
+export { explainSettlementApiAiExplainSettlementPost } from './aiController/explainSettlementApiAiExplainSettlementPost.ts';
+export { rewriteShareMessageApiAiRewriteShareMessagePost } from './aiController/rewriteShareMessageApiAiRewriteShareMessagePost.ts';
 export { createGroupApiGroupsPost } from './groupsController/createGroupApiGroupsPost.ts';
 export { getGroupApiGroupsGroupIdGet } from './groupsController/getGroupApiGroupsGroupIdGet.ts';
 export { addMemberApiGroupsGroupIdMembersPost } from './membersController/addMemberApiGroupsGroupIdMembersPost.ts';

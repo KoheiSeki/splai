@@ -43,7 +43,21 @@
 
 - 初回アクセス時に「あなたは誰?」を選択(ハイブリッド方式: 作成時に登録 + 後から追加可)
 - 選択結果を `localStorage.setItem('g_${group_id}', member_id)` で保存
-- 全 API 呼び出し時に `X-Member-Id` ヘッダで送信、FastAPI が `group_id` との整合性を検証
+- **書き込み系 API**(POST / PATCH / DELETE)呼び出し時に `X-Member-Id` ヘッダで送信、FastAPI が `group_id` との整合性を検証
+- **読み取り系 API**(GET)は public(URL = 招待リンクの設計上、URL 知っている人なら誰でも参照可)
+
+### 認可ルールの粒度
+
+| 操作 | X-Member-Id 必須 | 理由 |
+| --- | --- | --- |
+| `POST /api/groups`(グループ作成) | ❌ | まだ member が存在しないため |
+| `GET /api/groups/{id}` 系 | ❌ | URL = 招待リンク、参加前ユーザーが MemberSelect を表示する必要がある |
+| `POST /api/groups/{id}/members`(メンバー追加) | ✅ | 既存メンバーが招待行為を行う |
+| `POST/PATCH/DELETE /api/groups/{id}/payments/...` | ✅ | 書き込みは member だけに許す |
+| `GET /api/groups/{id}/settlement` | ❌ | 読み取りなので public(group 全体の状態を共有可)|
+| `POST /api/ai/...` | ✅(原則) | コスト保護のため |
+
+> **設計判断**(Phase 3 で更新): Phase 2 まで「`POST /api/groups` を除く全エンドポイントで X-Member-Id 必須」だったが、URL 共有 → 別端末で `/g/{uuid}` を開く際に新規ユーザーは memberId を持たないため GET が 422 で失敗していた。read を public に開放することで invitation flow が成立する。書き込み権限は引き続き membership で守る。
 
 ---
 
@@ -310,18 +324,19 @@ groups ──┬── members
 
 #### `ai_usage_logs`
 
-| カラム                       | 型                                                          | 説明                       |
-| ---------------------------- | ----------------------------------------------------------- | -------------------------- |
-| id                           | UUID PK                                                     |                            |
-| group_id                     | UUID FK NULL                                                |                            |
-| feature                      | ENUM('chat_input','ocr','message_gen','settlement_explain') |                            |
-| provider                     | TEXT                                                        | 'ibm_ca' / 'gcp_vision' 等 |
-| model                        | TEXT                                                        | 'claude-sonnet-4-6' 等     |
-| input_tokens / output_tokens | INTEGER                                                     |                            |
-| latency_ms                   | INTEGER                                                     |                            |
-| success                      | BOOLEAN                                                     |                            |
-| client_ip_hash               | TEXT                                                        | SHA256 ハッシュ            |
-| created_at                   | TIMESTAMPTZ                                                 |                            |
+Phase 3 実装。ICA 呼び出しのトークン使用量を記録し、コスト監視 + デバッグに使う。
+
+| カラム              | 型           | 説明                                                                 |
+| ------------------- | ------------ | -------------------------------------------------------------------- |
+| id                  | UUID PK      |                                                                      |
+| group_id            | UUID FK NULL | `chat-payment` のみ設定。rewrite / explain は NULL                   |
+| endpoint            | VARCHAR(50)  | `chat-payment` / `rewrite-share-message` / `explain-settlement`      |
+| model               | VARCHAR(50)  | 例: `claude-sonnet-4-6`                                              |
+| prompt_tokens       | INTEGER      | OpenAI 互換 naming(入力トークン)                                     |
+| completion_tokens   | INTEGER      | OpenAI 互換 naming(出力トークン)                                     |
+| created_at          | TIMESTAMPTZ  |                                                                      |
+
+> **Phase 5 以降で拡張予定:** 旧設計にあった `feature` ENUM / `provider` / `latency_ms` / `success` / `client_ip_hash` 等は hardening フェーズで追加検討する。
 
 ### インデックス
 
@@ -330,7 +345,7 @@ groups ──┬── members
 - `payment_shares(payment_id)`
 - `ai_messages(conversation_id, created_at)`
 - `ocr_jobs(group_id, status)`
-- `ai_usage_logs(group_id, feature, created_at)`
+- `ai_usage_logs(group_id, endpoint, created_at)`
 
 ### データ保持ポリシー
 
@@ -421,14 +436,17 @@ groups ──┬── members
 | GET    | /api/ocr-jobs/{id}                                  | OCR ジョブ状態確認                   |
 | POST   | /api/ai/chat-payment                                | AIチャット入力(SSEストリーミング)    |
 | POST   | /api/ai/rewrite-share-message                       | 共有メッセージのトーン変換           |
+| POST   | /api/ai/explain-settlement                          | 清算結果の自然言語解説               |
 
 > **設計判断**: payment 系の PATCH / DELETE も group 配下にネストする(`/api/groups/{group_id}/payments/{payment_id}`)。これにより `X-Member-Id` 認可を `Depends(require_member)` でそのまま使えるようになり、独自の `X-Group-Id` ヘッダを増やさずに済む。payment_id は UUID v4 で世界的に一意なので path 上の `group_id` は冗長だが、認可と URL の一貫性を優先した。
 
 ### 共通仕様
 
-- `POST /api/groups` を **除く** 全エンドポイントで `X-Member-Id` ヘッダ要求(group_id との整合性を検証)
-  - 例外理由: グループ作成時はまだ member が存在しないため
-  - グループ作成のレスポンスで返される creator_member_id をフロントが localStorage に保存し、以降のリクエストに付与する
+- **`X-Member-Id` 必須は書き込み系のみ**:
+  - 必須: `POST /api/groups/{id}/members` / `POST/PATCH/DELETE /api/groups/{id}/payments/...` / `POST /api/ai/*`
+  - 不要: `POST /api/groups`(まだ member が存在しない)/ `GET /api/groups/{id}` / `GET /api/groups/{id}/settlement`(読み取りは public)
+  - グループ作成のレスポンスで返される creator_member_id をフロントが localStorage に保存し、以降の書き込みリクエストに付与する
+  - URL 共有経由で `/g/{uuid}` を開いた新規ユーザーは、まず GET で参加メンバー一覧を取得 → 名前を選択 → localStorage に member_id を保存 → 書き込み可能になる、という flow になる(§2 参照)
 - 全エンドポイントで `X-Request-Id` ヘッダを尊重(無ければバックエンドで生成)
 - レスポンスは Pydantic モデル → OpenAPI スキーマ → Zod 自動生成
 - エラーレスポンスは RFC 7807(Problem Details)形式に統一
@@ -439,21 +457,25 @@ groups ──┬── members
 
 ### 8.1 チャット入力(Tool Use)
 
-`register_payment` ツールを定義し、AI が構造化データを生成:
+`POST /api/ai/chat-payment`(SSE)。`register_payment` ツールを定義し、AI が構造化データを生成する。Phase 3 では **等分 split のみ** 対応(ratio / amount は将来拡張)。
 
-```python
-class PaymentShareInput(BaseModel):
-    member_id: UUID
-    share_type: Literal["equal", "ratio", "amount"]
-    share_value: float
+**Tool schema** (`register_payment`):
 
-class RegisterPaymentTool(BaseModel):
-    payer_id: UUID
-    amount: int
-    description: str
-    paid_at: datetime
-    shares: list[PaymentShareInput]
-```
+| フィールド           | 型        | 説明                                      |
+| -------------------- | --------- | ----------------------------------------- |
+| `amount`             | integer   | 支払額(円、税込)                          |
+| `description`        | string    | 店名・用途                                |
+| `payerMemberId`      | UUID      | 立て替えたメンバー                        |
+| `shareMemberIds`     | UUID[]    | 等分で分担するメンバー(1 名以上)          |
+
+**SSE イベント**(SPLAI 内部規約):
+
+| event        | 内容                                              |
+| ------------ | ------------------------------------------------- |
+| `text_delta` | `{"text": "..."}` トークン単位の追記              |
+| `tool_use`   | `{"name": "register_payment", "input": {...}}`    |
+| `done`       | `{"model": "...", "usage": {...}}` stream 完了    |
+| `error`      | `{"message": "..."}` 上流失敗(502 ではなく SSE 内) |
 
 **プロンプト方針**:
 
@@ -463,13 +485,66 @@ class RegisterPaymentTool(BaseModel):
 
 ### 8.2 共有メッセージのトーン変換
 
-`tone` enum: `casual` / `formal` / `emoji_heavy`。URL は変更せず、文体のみ書き直し。
+`POST /api/ai/rewrite-share-message`。Phase 2 の共有メッセージ(`buildShareMessage()` の `text`)を、指定トーンで書き換える。**`message.url` は変更せず、文体のみ書き直す。**
+
+**Request** (`RewriteShareMessageRequest`):
+
+| フィールド | 型     | 説明                                      |
+| ---------- | ------ | ----------------------------------------- |
+| `text`     | string | 書き換え対象の共有文                      |
+| `tone`     | enum   | `casual` / `polite` / `playful`(省略時 `casual`) |
+
+**Response** (`RewriteShareMessageResponse`):
+
+| フィールド   | 型     | 説明                 |
+| ------------ | ------ | -------------------- |
+| `rewritten`  | string | 書き換え後の共有文   |
+
+**`tone` の意味**(system prompt 向け):
+
+| 値        | 方針                                       |
+| --------- | ------------------------------------------ |
+| `casual`  | カジュアルで友人同士のテンション           |
+| `polite`  | 丁寧で礼儀正しく                           |
+| `playful` | 遊び心のある言い回し(例: 「集金タイム!」) |
+
+Frontend では kubb 生成型 `RewriteShareMessageRequestToneEnumKey` を `Tone` として re-export する(UI 用の短い別名。wire format のフィールド名は `tone`)。
 
 ### 8.3 清算結果の AI 解説
 
-- 入力: 清算結果(送金リスト) + 元の支払い履歴
-- 出力: 200文字以内の自然文
-- 同一入力に対するプロセス内 in-memory キャッシュを実装(LRU、最大100件)
+`POST /api/ai/explain-settlement`。Settlement API の結果を AI に渡し、全員向けの清算サマリを自然文で返す。
+
+**Request** (`ExplainSettlementRequest`):
+
+| フィールド      | 型              | 説明                                              |
+| --------------- | --------------- | ------------------------------------------------- |
+| `members`       | `{id,name}[]`   | メンバー一覧                                      |
+| `transfers`     | `TransferDTO[]` | 送金リスト(`fromId` / `toId` / `amount`)          |
+| `netBalances`   | `Record<string, number>` | ネット収支(プラス=受取、マイナス=支払) |
+
+**Response** (`ExplainSettlementResponse`):
+
+| フィールド    | 型     | 説明                         |
+| ------------- | ------ | ---------------------------- |
+| `explanation` | string | 3–4 文程度の清算サマリ       |
+
+- 同一入力に対するプロセス内 in-memory キャッシュ(LRU、最大100件)は **Phase 3 スコープ外**。必要になった Phase 5 以降で検討する。
+
+### 8.4 エラー処理と usage 記録
+
+**エラー処理:**
+
+| 呼び出し方式                         | 挙動                                                                 |
+| ------------------------------------ | -------------------------------------------------------------------- |
+| `rewrite-share-message` / `explain-settlement` | ICA 失敗時 `AIGatewayError` → グローバル handler → **502** Problem Details |
+| `chat-payment`(SSE)                  | ICA 失敗時 **`event: error`** で返す(HTTP 502 ではない)              |
+
+**`ai_usage_logs` 記録:**
+
+- **タイミング:** ICA 呼び出し成功後(非 SSE は `chat_completion` 完了後、SSE は `done` イベント受信後)
+- **記録内容:** `endpoint`, `model`, `prompt_tokens`, `completion_tokens`, `group_id`(nullable), `created_at`
+- **`group_id`:** `chat-payment` は Request の `groupId` を記録。rewrite / explain は group コンテキストを伴わないため NULL
+- **失敗時:** 記録しない(`AIGatewayError` または SSE `error` イベント)
 
 ---
 
