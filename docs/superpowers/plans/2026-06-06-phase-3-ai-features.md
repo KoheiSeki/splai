@@ -1212,7 +1212,7 @@ async def rewrite_share_message(
     messages = [
         ChatMessage(role="system", content=system),
         ChatMessage(role="user", content=body.text),
-    ]
+    ]w
     result = await ai_gateway.chat_completion(messages)
     return RewriteShareMessageResponse(rewritten=result.text.strip())
 ```
@@ -1565,7 +1565,7 @@ import { parseSseStreamBody } from "@/features/ai/api";
 describe("parseSseStreamBody", () => {
   it("parses sse-starlette CRLF events", () => {
     const body =
-      'event: text_delta\r\n' +
+      "event: text_delta\r\n" +
       'data: {"text": "了解"}\r\n' +
       "\r\n" +
       "event: done\r\n" +
@@ -1777,28 +1777,32 @@ const [tab, setTab] = useState<"form" | "chat">("form");
   >
     AI CHAT
   </button>
-</div>
+</div>;
 
-{tab === "chat" ? (
-  <PaymentChat
-    groupId={groupId}
-    members={data.members}
-    onDraft={(d) => {
-      setDraft(d);
-      setTab("form"); // 入力後はフォームに切り替えて確認させる
-    }}
-  />
-) : (
-  <PaymentForm
-    groupId={groupId}
-    memberId={memberId}
-    members={data.members}
-    onCreated={onChange}
-    draft={draft ?? undefined}
-  />
-)}
+{
+  tab === "chat" ? (
+    <PaymentChat
+      groupId={groupId}
+      members={data.members}
+      onDraft={(d) => {
+        setDraft(d);
+        setTab("form"); // 入力後はフォームに切り替えて確認させる
+      }}
+    />
+  ) : (
+    <PaymentForm
+      groupId={groupId}
+      memberId={memberId}
+      members={data.members}
+      onCreated={onChange}
+      draft={draft ?? undefined}
+    />
+  );
+}
 
-{/* 以降 PaymentList / SettlementView / ShareSection は三項の外(同じ <section> 内) */}
+{
+  /* 以降 PaymentList / SettlementView / ShareSection は三項の外(同じ <section> 内) */
+}
 ```
 
 > **JSX 注意**: 三項演算子の閉じは `)}` である。`);` + `}` と書くとパースエラーになり、以降の `<PaymentList>` が return の外に出る。
@@ -1814,10 +1818,10 @@ const [tab, setTab] = useState<"form" | "chat">("form");
 
 Network タブで確認:
 
-| 確認項目 | 期待 |
-|---------|------|
-| Status | 200 OK |
-| Content-Type | `text/event-stream` |
+| 確認項目               | 期待                                                 |
+| ---------------------- | ---------------------------------------------------- |
+| Status                 | 200 OK                                               |
+| Content-Type           | `text/event-stream`                                  |
 | Response / EventStream | `event: error` または `event: text_delta` 等が見える |
 
 UI で確認:

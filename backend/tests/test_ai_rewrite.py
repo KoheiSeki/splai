@@ -5,6 +5,14 @@ from app.services import ai_gateway
 from app.services.ai_gateway import CompletionResult, Usage
 
 
+@pytest.fixture(autouse=True)
+def mock_record_usage(monkeypatch):
+    async def noop(*args, **kwargs):
+        pass
+
+    monkeypatch.setattr("app.api.ai.record_ai_usage", noop)
+
+
 @pytest.fixture
 def mock_completion(monkeypatch):
     async def fake(messages, **kwargs):

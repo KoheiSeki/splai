@@ -85,7 +85,8 @@ class StreamEvent:
     - text_delta: payload = {"text": "..."}(token 単位の追記)
     - tool_use: payload = {"name": "register_payment", "input": {...}}
                 (tool_calls 完成時に 1 回だけ発火)
-    - done: payload = {}(stream 完了)
+    - done: payload = {"model": "...", "usage": {"prompt_tokens": N,
+      "completion_tokens": M}}(stream 完了。usage は stream_options 有効時)
     - error: payload = {"message": "..."}
     """
 
@@ -209,6 +210,8 @@ async def chat_completion_stream(
 
     # tool_calls の累積バッファ。index 別に function.{name, arguments} を文字列で貯める。
     tool_buf: dict[int, dict[str, str]] = {}
+    stream_model = model
+    stream_usage: Usage | None = None
 
     try:
         stream = await client.chat.completions.create(
@@ -217,6 +220,7 @@ async def chat_completion_stream(
             tools=_to_openai_tools(tools),
             max_tokens=max_tokens,
             stream=True,
+            stream_options={"include_usage": True},
         )
     except APIError as e:
         yield StreamEvent(type="error", payload={"message": f"upstream API error: {e}"})
@@ -227,6 +231,14 @@ async def chat_completion_stream(
 
     try:
         async for chunk in stream:
+            if chunk.model:
+                stream_model = chunk.model
+            if chunk.usage:
+                stream_usage = Usage(
+                    prompt_tokens=chunk.usage.prompt_tokens or 0,
+                    completion_tokens=chunk.usage.completion_tokens or 0,
+                )
+
             if not chunk.choices:
                 continue
             choice = chunk.choices[0]
@@ -267,4 +279,10 @@ async def chat_completion_stream(
         yield StreamEvent(type="error", payload={"message": f"upstream API error: {e}"})
         return
 
-    yield StreamEvent(type="done", payload={})
+    done_payload: dict[str, Any] = {"model": stream_model}
+    if stream_usage is not None:
+        done_payload["usage"] = {
+            "prompt_tokens": stream_usage.prompt_tokens,
+            "completion_tokens": stream_usage.completion_tokens,
+        }
+    yield StreamEvent(type="done", payload=done_payload)

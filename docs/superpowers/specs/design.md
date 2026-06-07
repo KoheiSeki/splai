@@ -324,18 +324,19 @@ groups ──┬── members
 
 #### `ai_usage_logs`
 
-| カラム                       | 型                                                          | 説明                       |
-| ---------------------------- | ----------------------------------------------------------- | -------------------------- |
-| id                           | UUID PK                                                     |                            |
-| group_id                     | UUID FK NULL                                                |                            |
-| feature                      | ENUM('chat_input','ocr','message_gen','settlement_explain') |                            |
-| provider                     | TEXT                                                        | 'ibm_ca' / 'gcp_vision' 等 |
-| model                        | TEXT                                                        | 'claude-sonnet-4-6' 等     |
-| input_tokens / output_tokens | INTEGER                                                     |                            |
-| latency_ms                   | INTEGER                                                     |                            |
-| success                      | BOOLEAN                                                     |                            |
-| client_ip_hash               | TEXT                                                        | SHA256 ハッシュ            |
-| created_at                   | TIMESTAMPTZ                                                 |                            |
+Phase 3 実装。ICA 呼び出しのトークン使用量を記録し、コスト監視 + デバッグに使う。
+
+| カラム              | 型           | 説明                                                                 |
+| ------------------- | ------------ | -------------------------------------------------------------------- |
+| id                  | UUID PK      |                                                                      |
+| group_id            | UUID FK NULL | `chat-payment` のみ設定。rewrite / explain は NULL                   |
+| endpoint            | VARCHAR(50)  | `chat-payment` / `rewrite-share-message` / `explain-settlement`      |
+| model               | VARCHAR(50)  | 例: `claude-sonnet-4-6`                                              |
+| prompt_tokens       | INTEGER      | OpenAI 互換 naming(入力トークン)                                     |
+| completion_tokens   | INTEGER      | OpenAI 互換 naming(出力トークン)                                     |
+| created_at          | TIMESTAMPTZ  |                                                                      |
+
+> **Phase 5 以降で拡張予定:** 旧設計にあった `feature` ENUM / `provider` / `latency_ms` / `success` / `client_ip_hash` 等は hardening フェーズで追加検討する。
 
 ### インデックス
 
@@ -344,7 +345,7 @@ groups ──┬── members
 - `payment_shares(payment_id)`
 - `ai_messages(conversation_id, created_at)`
 - `ocr_jobs(group_id, status)`
-- `ai_usage_logs(group_id, feature, created_at)`
+- `ai_usage_logs(group_id, endpoint, created_at)`
 
 ### データ保持ポリシー
 
@@ -456,21 +457,25 @@ groups ──┬── members
 
 ### 8.1 チャット入力(Tool Use)
 
-`register_payment` ツールを定義し、AI が構造化データを生成:
+`POST /api/ai/chat-payment`(SSE)。`register_payment` ツールを定義し、AI が構造化データを生成する。Phase 3 では **等分 split のみ** 対応(ratio / amount は将来拡張)。
 
-```python
-class PaymentShareInput(BaseModel):
-    member_id: UUID
-    share_type: Literal["equal", "ratio", "amount"]
-    share_value: float
+**Tool schema** (`register_payment`):
 
-class RegisterPaymentTool(BaseModel):
-    payer_id: UUID
-    amount: int
-    description: str
-    paid_at: datetime
-    shares: list[PaymentShareInput]
-```
+| フィールド           | 型        | 説明                                      |
+| -------------------- | --------- | ----------------------------------------- |
+| `amount`             | integer   | 支払額(円、税込)                          |
+| `description`        | string    | 店名・用途                                |
+| `payerMemberId`      | UUID      | 立て替えたメンバー                        |
+| `shareMemberIds`     | UUID[]    | 等分で分担するメンバー(1 名以上)          |
+
+**SSE イベント**(SPLAI 内部規約):
+
+| event        | 内容                                              |
+| ------------ | ------------------------------------------------- |
+| `text_delta` | `{"text": "..."}` トークン単位の追記              |
+| `tool_use`   | `{"name": "register_payment", "input": {...}}`    |
+| `done`       | `{"model": "...", "usage": {...}}` stream 完了    |
+| `error`      | `{"message": "..."}` 上流失敗(502 ではなく SSE 内) |
 
 **プロンプト方針**:
 
@@ -524,6 +529,22 @@ Frontend では kubb 生成型 `RewriteShareMessageRequestToneEnumKey` を `Tone
 | `explanation` | string | 3–4 文程度の清算サマリ       |
 
 - 同一入力に対するプロセス内 in-memory キャッシュ(LRU、最大100件)は **Phase 3 スコープ外**。必要になった Phase 5 以降で検討する。
+
+### 8.4 エラー処理と usage 記録
+
+**エラー処理:**
+
+| 呼び出し方式                         | 挙動                                                                 |
+| ------------------------------------ | -------------------------------------------------------------------- |
+| `rewrite-share-message` / `explain-settlement` | ICA 失敗時 `AIGatewayError` → グローバル handler → **502** Problem Details |
+| `chat-payment`(SSE)                  | ICA 失敗時 **`event: error`** で返す(HTTP 502 ではない)              |
+
+**`ai_usage_logs` 記録:**
+
+- **タイミング:** ICA 呼び出し成功後(非 SSE は `chat_completion` 完了後、SSE は `done` イベント受信後)
+- **記録内容:** `endpoint`, `model`, `prompt_tokens`, `completion_tokens`, `group_id`(nullable), `created_at`
+- **`group_id`:** `chat-payment` は Request の `groupId` を記録。rewrite / explain は group コンテキストを伴わないため NULL
+- **失敗時:** 記録しない(`AIGatewayError` または SSE `error` イベント)
 
 ---
 

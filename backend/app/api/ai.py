@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
+from app.db.session import get_session
 from app.schemas.ai import (
     ChatPaymentRequest,
     ExplainSettlementRequest,
@@ -14,6 +16,7 @@ from app.schemas.ai import (
 )
 from app.services import ai_gateway
 from app.services.ai_gateway import ChatMessage, ToolDefinition
+from app.services.ai_usage import record_ai_usage
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
@@ -87,7 +90,10 @@ def _build_system_message(members: list[dict[str, str]]) -> str:
 
 
 @router.post("/chat-payment")
-async def chat_payment(body: ChatPaymentRequest) -> EventSourceResponse:
+async def chat_payment(
+    body: ChatPaymentRequest,
+    db: AsyncSession = Depends(get_session),
+) -> EventSourceResponse:
     """自然言語 → register_payment ツール呼び出しの SSE 配信。"""
 
     messages = [
@@ -100,6 +106,17 @@ async def chat_payment(body: ChatPaymentRequest) -> EventSourceResponse:
             async for ev in ai_gateway.chat_completion_stream(
                 messages, tools=[REGISTER_PAYMENT_TOOL]
             ):
+                if ev.type == "done":
+                    usage = ev.payload.get("usage")
+                    if usage:
+                        await record_ai_usage(
+                            db,
+                            endpoint="chat-payment",
+                            model=str(ev.payload.get("model", "")),
+                            prompt_tokens=int(usage["prompt_tokens"]),
+                            completion_tokens=int(usage["completion_tokens"]),
+                            group_id=body.group_id,
+                        )
                 yield {"event": ev.type, "data": json.dumps(ev.payload, ensure_ascii=False)}
         except Exception as e:
             yield {"event": "error", "data": json.dumps({"message": str(e)})}
@@ -108,7 +125,10 @@ async def chat_payment(body: ChatPaymentRequest) -> EventSourceResponse:
 
 
 @router.post("/rewrite-share-message", response_model=RewriteShareMessageResponse)
-async def rewrite_share_message(body: RewriteShareMessageRequest) -> EventSourceResponse:
+async def rewrite_share_message(
+    body: RewriteShareMessageRequest,
+    db: AsyncSession = Depends(get_session),
+) -> RewriteShareMessageResponse:
     """共有メッセージをAIで編集する関数（非ストリーム）"""
 
     system = f"{REWRITE_SYSTEM_BASE}\nトーン: {REWRITE_TONE_DIRECTIVE[body.tone]}"
@@ -117,12 +137,22 @@ async def rewrite_share_message(body: RewriteShareMessageRequest) -> EventSource
         ChatMessage(role="user", content=body.text),
     ]
     result = await ai_gateway.chat_completion(messages)
+    await record_ai_usage(
+        db,
+        endpoint="rewrite-share-message",
+        model=result.model,
+        prompt_tokens=result.usage.prompt_tokens,
+        completion_tokens=result.usage.completion_tokens,
+    )
 
     return RewriteShareMessageResponse(rewritten=result.text.strip())
 
 
 @router.post("/explain-settlement", response_model=ExplainSettlementResponse)
-async def explain_settlement(body: ExplainSettlementRequest) -> ExplainSettlementResponse:
+async def explain_settlement(
+    body: ExplainSettlementRequest,
+    db: AsyncSession = Depends(get_session),
+) -> ExplainSettlementResponse:
     user_content = (
         f"メンバー: {body.members}\n"
         f"ネット収支(プラス=受取、マイナス=支払): {body.net_balances}\n"
@@ -133,4 +163,11 @@ async def explain_settlement(body: ExplainSettlementRequest) -> ExplainSettlemen
         ChatMessage(role="user", content=user_content),
     ]
     result = await ai_gateway.chat_completion(messages)
+    await record_ai_usage(
+        db,
+        endpoint="explain-settlement",
+        model=result.model,
+        prompt_tokens=result.usage.prompt_tokens,
+        completion_tokens=result.usage.completion_tokens,
+    )
     return ExplainSettlementResponse(explanation=result.text.strip())

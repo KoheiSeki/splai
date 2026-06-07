@@ -75,3 +75,45 @@ async def test_chat_completion_raises_on_upstream_error(monkeypatch):
 
     with pytest.raises(AIGatewayError):
         await chat_completion(messages=[ChatMessage(role="user", content="hi")])
+
+
+async def test_chat_completion_stream_includes_usage_in_done(monkeypatch):
+    async def fake_create(*, stream=False, stream_options=None, **kwargs):
+        assert stream is True
+        assert stream_options == {"include_usage": True}
+
+        async def chunks():
+            yield SimpleNamespace(
+                model="claude-sonnet-4-6",
+                choices=[
+                    SimpleNamespace(
+                        delta=SimpleNamespace(content="了解", tool_calls=None),
+                        finish_reason=None,
+                    )
+                ],
+                usage=None,
+            )
+            yield SimpleNamespace(
+                model="claude-sonnet-4-6",
+                choices=[],
+                usage=SimpleNamespace(prompt_tokens=12, completion_tokens=4),
+            )
+
+        return chunks()
+
+    from app.services import ai_gateway
+
+    fake_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=fake_create))
+    )
+    monkeypatch.setattr(ai_gateway, "_get_client", lambda: fake_client)
+
+    events = [
+        ev
+        async for ev in ai_gateway.chat_completion_stream(
+            messages=[ChatMessage(role="user", content="hi")]
+        )
+    ]
+    assert events[-1].type == "done"
+    assert events[-1].payload["model"] == "claude-sonnet-4-6"
+    assert events[-1].payload["usage"] == {"prompt_tokens": 12, "completion_tokens": 4}

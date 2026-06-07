@@ -5,6 +5,14 @@ from httpx import AsyncClient
 from app.services.ai_gateway import StreamEvent
 
 
+@pytest.fixture(autouse=True)
+def mock_record_usage(monkeypatch):
+    async def noop(*args, **kwargs):
+        pass
+
+    monkeypatch.setattr("app.api.ai.record_ai_usage", noop)
+
+
 @pytest.fixture
 def mock_stream(monkeypatch):
     async def fake_stream(*args, **kwargs):
@@ -24,7 +32,13 @@ def mock_stream(monkeypatch):
                 },
             },
         )
-        yield StreamEvent(type="done", payload={})
+        yield StreamEvent(
+            type="done",
+            payload={
+                "model": "claude-sonnet-4-6",
+                "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+            },
+        )
 
     from app.services import ai_gateway
 
