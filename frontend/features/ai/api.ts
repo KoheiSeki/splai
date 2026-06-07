@@ -1,6 +1,12 @@
 'use client';
 
-import { explainSettlementApiAiExplainSettlementPost } from '@/lib/api/gen';
+import {
+  explainSettlementApiAiExplainSettlementPost,
+  rewriteShareMessageApiAiRewriteShareMessagePost,
+  RewriteShareMessageApiAiRewriteShareMessagePostMutationRequest,
+  RewriteShareMessageApiAiRewriteShareMessagePostMutationResponse,
+  RewriteShareMessageRequestToneEnumKey,
+} from '@/lib/api/gen';
 import {
   ExplainSettlementApiAiExplainSettlementPostMutationRequest,
   ExplainSettlementApiAiExplainSettlementPostMutationResponse,
@@ -23,6 +29,13 @@ export type ChatPaymentEvent =
 
 export type ExplainSettlementInput = ExplainSettlementApiAiExplainSettlementPostMutationRequest;
 export type ExplainSettlementResult = ExplainSettlementApiAiExplainSettlementPostMutationResponse;
+
+export type RewriteShareMessageInput =
+  RewriteShareMessageApiAiRewriteShareMessagePostMutationRequest;
+export type RewriteShareMessageResult =
+  RewriteShareMessageApiAiRewriteShareMessagePostMutationResponse;
+
+export type Tone = RewriteShareMessageRequestToneEnumKey;
 
 export async function* streamChatPayment(
   input: ChatPaymentInput,
@@ -145,7 +158,7 @@ function parseSseBlock(block: string): ChatPaymentEvent | null {
 }
 
 /**
- * 精算内容説明APIを呼び出す
+ * 精算内容説明APIを呼び出す関数
  * @param input 精算内容説明リクエスト
  * @returns 精算内容説明レスポンス
  */
@@ -153,4 +166,15 @@ export async function explainSettlement(
   input: ExplainSettlementInput,
 ): Promise<ExplainSettlementResponse> {
   return explainSettlementApiAiExplainSettlementPost(input);
+}
+
+/**
+ * 共有メッセージをAIで編集するAPIを呼び出す関数
+ * @param input 共有メッセージ編集リクエスト
+ * @returns 共有メッセージ編集レスポンス
+ */
+export async function rewriteShareMessage(
+  input: RewriteShareMessageInput,
+): Promise<RewriteShareMessageResult> {
+  return rewriteShareMessageApiAiRewriteShareMessagePost(input);
 }

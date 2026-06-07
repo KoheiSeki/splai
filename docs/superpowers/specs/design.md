@@ -435,6 +435,7 @@ groups ──┬── members
 | GET    | /api/ocr-jobs/{id}                                  | OCR ジョブ状態確認                   |
 | POST   | /api/ai/chat-payment                                | AIチャット入力(SSEストリーミング)    |
 | POST   | /api/ai/rewrite-share-message                       | 共有メッセージのトーン変換           |
+| POST   | /api/ai/explain-settlement                          | 清算結果の自然言語解説               |
 
 > **設計判断**: payment 系の PATCH / DELETE も group 配下にネストする(`/api/groups/{group_id}/payments/{payment_id}`)。これにより `X-Member-Id` 認可を `Depends(require_member)` でそのまま使えるようになり、独自の `X-Group-Id` ヘッダを増やさずに済む。payment_id は UUID v4 で世界的に一意なので path 上の `group_id` は冗長だが、認可と URL の一貫性を優先した。
 
@@ -479,13 +480,50 @@ class RegisterPaymentTool(BaseModel):
 
 ### 8.2 共有メッセージのトーン変換
 
-`tone` enum: `casual` / `formal` / `emoji_heavy`。URL は変更せず、文体のみ書き直し。
+`POST /api/ai/rewrite-share-message`。Phase 2 の共有メッセージ(`buildShareMessage()` の `text`)を、指定トーンで書き換える。**`message.url` は変更せず、文体のみ書き直す。**
+
+**Request** (`RewriteShareMessageRequest`):
+
+| フィールド | 型     | 説明                                      |
+| ---------- | ------ | ----------------------------------------- |
+| `text`     | string | 書き換え対象の共有文                      |
+| `tone`     | enum   | `casual` / `polite` / `playful`(省略時 `casual`) |
+
+**Response** (`RewriteShareMessageResponse`):
+
+| フィールド   | 型     | 説明                 |
+| ------------ | ------ | -------------------- |
+| `rewritten`  | string | 書き換え後の共有文   |
+
+**`tone` の意味**(system prompt 向け):
+
+| 値        | 方針                                       |
+| --------- | ------------------------------------------ |
+| `casual`  | カジュアルで友人同士のテンション           |
+| `polite`  | 丁寧で礼儀正しく                           |
+| `playful` | 遊び心のある言い回し(例: 「集金タイム!」) |
+
+Frontend では kubb 生成型 `RewriteShareMessageRequestToneEnumKey` を `Tone` として re-export する(UI 用の短い別名。wire format のフィールド名は `tone`)。
 
 ### 8.3 清算結果の AI 解説
 
-- 入力: 清算結果(送金リスト) + 元の支払い履歴
-- 出力: 200文字以内の自然文
-- 同一入力に対するプロセス内 in-memory キャッシュを実装(LRU、最大100件)
+`POST /api/ai/explain-settlement`。Settlement API の結果を AI に渡し、全員向けの清算サマリを自然文で返す。
+
+**Request** (`ExplainSettlementRequest`):
+
+| フィールド      | 型              | 説明                                              |
+| --------------- | --------------- | ------------------------------------------------- |
+| `members`       | `{id,name}[]`   | メンバー一覧                                      |
+| `transfers`     | `TransferDTO[]` | 送金リスト(`fromId` / `toId` / `amount`)          |
+| `netBalances`   | `Record<string, number>` | ネット収支(プラス=受取、マイナス=支払) |
+
+**Response** (`ExplainSettlementResponse`):
+
+| フィールド    | 型     | 説明                         |
+| ------------- | ------ | ---------------------------- |
+| `explanation` | string | 3–4 文程度の清算サマリ       |
+
+- 同一入力に対するプロセス内 in-memory キャッシュ(LRU、最大100件)は **Phase 3 スコープ外**。必要になった Phase 5 以降で検討する。
 
 ---
 
