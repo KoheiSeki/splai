@@ -8,6 +8,7 @@ from uuid import uuid4
 from app.models.ai_usage_log import AiUsageLog
 from app.models.group import Group
 from app.models.member import Member
+from app.models.ocr_job import OcrJob, OcrJobStatus, OcrProvider
 from app.models.payment import Payment, PaymentSource
 from app.models.payment_share import PaymentShare, ShareType
 
@@ -61,3 +62,13 @@ def test_ai_usage_log_instantiation():
     assert log.endpoint == "chat-payment"
     assert log.prompt_tokens == 120
     assert log.completion_tokens == 45
+
+
+def test_ocr_job_instantiation():
+    job = OcrJob(
+        group_id="00000000-0000-0000-0000-000000000001",
+        image_path="receipts/g1/job.jpg",
+        provider=OcrProvider.GCP_VISION,
+        status=OcrJobStatus.PENDING,
+    )
+    assert job.status == OcrJobStatus.PENDING
