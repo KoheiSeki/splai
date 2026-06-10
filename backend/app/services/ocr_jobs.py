@@ -23,15 +23,18 @@ async def create_job(
     group_id: UUID,
     image_path: str,
     provider: OcrProvider = OcrProvider.GCP_VISION,
+    job_id: UUID | None = None,
 ) -> OcrJob:
     """`pending` 状態の ocr_jobs 行を作成する。コミットは呼び出し側責務。"""
-
-    job = OcrJob(
-        group_id=group_id,
-        image_path=image_path,
-        provider=provider,
-        status=OcrJobStatus.PENDING,
-    )
+    kwargs: dict = {
+        "group_id": group_id,
+        "image_path": image_path,
+        "provider": provider,
+        "status": OcrJobStatus.PENDING,
+    }
+    if job_id is not None:
+        kwargs["id"] = job_id
+    job = OcrJob(**kwargs)
     db.add(job)
     await db.flush()
     return job

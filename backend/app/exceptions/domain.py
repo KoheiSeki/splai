@@ -28,6 +28,12 @@ class OCRFailed(SplaiError):
     title: str = "OCR Failed"
 
 
+class OcrJobNotFound(SplaiError):
+    status_code: int = 404
+    type_slug: str = "ocr-job-not-found"
+    title: str = "OCR Job Not Found"
+
+
 class AIProviderError(SplaiError):
     status_code: int = 502
     type_slug: str = "ai-provider-error"
