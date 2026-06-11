@@ -105,3 +105,43 @@ async def test_delete_payment_soft_deletes(client: AsyncClient):
     # 一覧から消える
     list_res = await client.get(f"/api/groups/{gid}", headers={"X-Member-Id": creator_mid})
     assert list_res.json()["payments"] == []
+
+
+async def test_create_payment_rejects_amount_shares_not_matching_total(client: AsyncClient):
+    gid, creator_mid, members = await _create_group_with_members(client, ["A", "B"])
+    a, b = members[0]["id"], members[1]["id"]
+    res = await client.post(
+        f"/api/groups/{gid}/payments",
+        headers={"X-Member-Id": creator_mid},
+        json={
+            "payerId": creator_mid,
+            "amount": 1000,
+            "description": "x",
+            "shares": [
+                {"memberId": a, "shareType": "amount", "shareValue": 600},
+                {"memberId": b, "shareType": "amount", "shareValue": 300},
+            ],
+        },
+    )
+    assert res.status_code == 400
+    assert res.json()["type"].endswith("/invalid-payment-shares")
+
+
+async def test_create_payment_accepts_amount_shares_matching_total(client: AsyncClient):
+    gid, creator_mid, members = await _create_group_with_members(client, ["A", "B"])
+    a, b = members[0]["id"], members[1]["id"]
+    res = await client.post(
+        f"/api/groups/{gid}/payments",
+        headers={"X-Member-Id": creator_mid},
+        json={
+            "payerId": creator_mid,
+            "amount": 1000,
+            "description": "split",
+            "shares": [
+                {"memberId": a, "shareType": "amount", "shareValue": 600},
+                {"memberId": b, "shareType": "amount", "shareValue": 400},
+            ],
+        },
+    )
+    assert res.status_code == 201
+    assert len(res.json()["shares"]) == 2

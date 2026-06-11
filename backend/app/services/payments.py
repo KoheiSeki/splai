@@ -45,6 +45,15 @@ async def create_payment_with_shares(
     rows = await db.scalars(
         select(Member.id).where(Member.group_id == group_id, Member.id.in_(member_ids))
     )
+
+    amount_shares = [s for s in shares if s.share_type == "amount"]
+    if amount_shares and len(amount_shares) == len(shares):
+        share_total = sum(int(s.share_value) for s in amount_shares)
+        if share_total != amount:
+            raise InvalidPaymentShares(
+                f"share amounts sum {share_total} does not match payment amount {amount}"
+            )
+
     valid_ids = set(rows.all())
     invalid = member_ids - valid_ids
     if invalid:
