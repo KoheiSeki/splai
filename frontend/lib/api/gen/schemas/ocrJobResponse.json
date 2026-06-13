@@ -1,0 +1,45 @@
+{
+  "properties": {
+    "id": { "type": "string", "format": "uuid", "title": "Id" },
+    "groupId": { "type": "string", "format": "uuid", "title": "Groupid" },
+    "status": {
+      "type": "string",
+      "enum": ["pending", "processing", "succeeded", "failed"],
+      "title": "Status"
+    },
+    "result": {
+      "anyOf": [
+        {
+          "properties": {
+            "merchantName": {
+              "anyOf": [{ "type": "string" }, { "type": "null" }],
+              "title": "Merchantname"
+            },
+            "totalAmount": {
+              "anyOf": [{ "type": "integer" }, { "type": "null" }],
+              "title": "Totalamount"
+            },
+            "rawText": { "type": "string", "title": "Rawtext" }
+          },
+          "type": "object",
+          "required": ["rawText"],
+          "title": "OcrResultDTO",
+          "x-readme-ref-name": "OcrResultDTO"
+        },
+        { "type": "null" }
+      ]
+    },
+    "errorMessage": {
+      "anyOf": [{ "type": "string" }, { "type": "null" }],
+      "title": "Errormessage"
+    },
+    "paymentId": {
+      "anyOf": [{ "type": "string", "format": "uuid" }, { "type": "null" }],
+      "title": "Paymentid"
+    }
+  },
+  "type": "object",
+  "required": ["id", "groupId", "status"],
+  "title": "OcrJobResponse",
+  "x-readme-ref-name": "OcrJobResponse"
+}

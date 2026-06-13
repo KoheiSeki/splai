@@ -25,7 +25,8 @@
       },
       "type": "array",
       "title": "Shares"
-    }
+    },
+    "ocrImagePath": { "anyOf": [{ "type": "string" }, { "type": "null" }], "title": "Ocrimagepath" }
   },
   "type": "object",
   "required": ["id", "payerId", "amount", "description", "paidAt", "source", "shares"],
