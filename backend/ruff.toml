@@ -30,3 +30,4 @@ ignore = [
 "tests/conftest.py" = ["N806"]
 "tests/test_auth_deps.py" = ["N806"]
 "tests/test_ocr_jobs_service.py" = ["N806"]
+"tests/test_payments_api.py" = ["N806"]

@@ -92,4 +92,5 @@ async def get_ocr_job(job_id: UUID, db: AsyncSession = Depends(get_session)) -> 
         status=job.status,
         result=result,
         error_message=job.error_message,
+        payment_id=job.payment_id,
     )

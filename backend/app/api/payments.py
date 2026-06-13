@@ -46,6 +46,7 @@ async def create_payment(
             )
             for s in body.shares
         ],
+        ocr_job_id=body.ocr_job_id,
     )
 
     return PaymentSummary(
@@ -63,6 +64,7 @@ async def create_payment(
             )
             for s in share_models
         ],
+        ocr_image_path=payment.ocr_image_path,
     )
 
 

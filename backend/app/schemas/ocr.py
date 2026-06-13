@@ -22,3 +22,5 @@ class OcrJobResponse(CamelModel):
     status: Literal["pending", "processing", "succeeded", "failed"]
     result: OcrResultDTO | None = None
     error_message: str | None = None
+    # OCR 確定後に payment と link されると埋まる(Frontend が「既に登録済み」検出に使う)。
+    payment_id: UUID | None = None

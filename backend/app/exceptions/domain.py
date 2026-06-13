@@ -50,3 +50,27 @@ class AIGatewayError(SplaiError):
     status_code: int = 502
     type_slug: str = "ai-gateway-error"
     title: str = "AI Gateway Error"
+
+
+class OcrJobNotReady(SplaiError):
+    """OcrJob.status が succeeded 以外。"""
+
+    status_code: int = 400
+    type_slug: str = "ocr-job-not-ready"
+    title: str = "OCR Job Not Ready"
+
+
+class OcrJobMismatch(SplaiError):
+    """OcrJob.group_id がリクエストの group_id と不一致。"""
+
+    status_code: int = 400
+    type_slug: str = "ocr-job-mismatch"
+    title: str = "OCR Job Mismatch"
+
+
+class OcrJobAlreadyLinked(SplaiError):
+    """OcrJob.payment_id が既に設定済み(再 link 不可)。"""
+
+    status_code: int = 409
+    type_slug: str = "ocr-job-already-linked"
+    title: str = "OCR Job Already Linked"
