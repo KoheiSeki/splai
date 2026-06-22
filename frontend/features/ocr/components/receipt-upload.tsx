@@ -1,8 +1,29 @@
+// frontend/features/ocr/components/receipt-upload.tsx
+//
+// レシートアップロード + 状態切替の orchestration。実 UI は子コンポーネントに分離:
+//   - UploadHeader   ステータスラベル + 経過秒 + step dots
+//   - UploadActions  IDLE 時の picker(SCAN / FILES)
+//   - UploadProgress UPLOADING / PROCESSING の進捗バー
+//   - UploadFeedback FAILED / TIMED OUT / UPLOAD ERROR の警告
+//
+// 純粋関数:
+//   - validateImageFile  MIME / サイズ検証
+//   - useElapsedSeconds  active 中だけ秒カウント
+//   - useOcrJobPoll      job_id をポーリングして status を取得
+
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+
 import { uploadReceipt, type OcrJobResponse } from '@/features/ocr/api';
+import { useElapsedSeconds } from '@/features/ocr/use-elapsed-seconds';
 import { useOcrJobPoll } from '@/features/ocr/use-ocr-job-poll';
+import { ALLOWED_IMAGE_ACCEPT, validateImageFile } from '@/features/ocr/utils/validate-image-file';
+
+import { UploadActions } from './upload-actions';
+import { UploadFeedback } from './upload-feedback';
+import { UploadHeader, type UploadStatus } from './upload-header';
+import { UploadProgress } from './upload-progress';
 
 type Props = {
   groupId: string;
@@ -11,18 +32,16 @@ type Props = {
   onSucceeded: (job: OcrJobResponse) => void;
 };
 
-const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
-const MAX_BYTES = 10 * 1024 * 1024;
-
 export function ReceiptUpload({ groupId, memberId, onSucceeded }: Props) {
-  const inputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
 
   const poll = useOcrJobPoll(jobId);
 
-  // succeeded を 1 度だけ親へ通知
+  // succeeded を 1 度だけ親へ通知(同じ job_id で重複しない)
   const succeededRef = useRef<string | null>(null);
   useEffect(() => {
     if (poll.job?.status === 'succeeded' && succeededRef.current !== poll.job.id) {
@@ -32,19 +51,28 @@ export function ReceiptUpload({ groupId, memberId, onSucceeded }: Props) {
   }, [poll.job, onSucceeded]);
 
   const failed = poll.job?.status === 'failed';
-  const isAiActive = isUploading || poll.isPolling; // ← `--red` 発色の条件
-  const elapsedHint = poll.isPolling ? 'OCR 処理中…' : isUploading ? 'アップロード中…' : null;
+  const isAiActive = isUploading || poll.isPolling;
+  const elapsedSec = useElapsedSeconds(isAiActive);
+
+  const status: UploadStatus = isUploading
+    ? 'uploading'
+    : poll.isPolling
+      ? 'processing'
+      : failed
+        ? 'failed'
+        : poll.timedOut
+          ? 'timedOut'
+          : 'idle';
+
+  const showActions = status === 'idle' && !uploadError;
 
   const handleFile = async (file: File) => {
     setUploadError(null);
     succeededRef.current = null;
 
-    if (!ALLOWED_TYPES.includes(file.type)) {
-      setUploadError(`対応していない形式: ${file.type}`);
-      return;
-    }
-    if (file.size > MAX_BYTES) {
-      setUploadError(`画像が 10MB を超えています(${Math.round(file.size / 1024 / 1024)}MB)`);
+    const v = validateImageFile(file);
+    if (v) {
+      setUploadError(v.reason);
       return;
     }
 
@@ -63,94 +91,79 @@ export function ReceiptUpload({ groupId, memberId, onSucceeded }: Props) {
   const handleRetry = () => {
     setJobId(null);
     setUploadError(null);
-    inputRef.current?.click();
+    succeededRef.current = null;
   };
+
+  const triggerCamera = () => cameraInputRef.current?.click();
+  const triggerFile = () => fileInputRef.current?.click();
 
   return (
     <section
       className={`
-        border-2 p-4 flex flex-col gap-3 transition-colors
+        border-2 transition-colors
         ${isAiActive ? 'border-red bg-red/5' : 'border-ink bg-paper'}
       `}
     >
-      <header className="flex items-baseline justify-between">
-        <h3 className={`font-jp-display text-sm tracking-widest ${isAiActive ? 'text-red' : ''}`}>
-          RECEIPT — レシート画像
-        </h3>
-        {elapsedHint && (
-          <span className="font-mono text-xs text-red" role="status">
-            {elapsedHint}
-          </span>
-        )}
-      </header>
+      <UploadHeader status={status} elapsedSec={elapsedSec} />
 
+      <div className="p-4">
+        {showActions && <UploadActions onPickCamera={triggerCamera} onPickFile={triggerFile} />}
+
+        {(status === 'uploading' || status === 'processing') && (
+          <UploadProgress phase={status} elapsedSec={elapsedSec} />
+        )}
+
+        {status === 'failed' && poll.job && (
+          <UploadFeedback
+            kind="failed"
+            message={poll.job.errorMessage ?? 'OCR に失敗しました'}
+            onRetry={handleRetry}
+          />
+        )}
+
+        {status === 'timedOut' && (
+          <UploadFeedback
+            kind="timedOut"
+            message="30 秒経っても完了しませんでした。"
+            onRetry={handleRetry}
+          />
+        )}
+
+        {uploadError && !isAiActive && (
+          <UploadFeedback kind="error" message={uploadError} onRetry={handleRetry} />
+        )}
+
+        {poll.fetchError && (
+          <p role="alert" className="mt-3 border-l-4 border-ink pl-3 py-1 font-jp-display text-xs">
+            状態取得に失敗しました:{poll.fetchError}
+          </p>
+        )}
+      </div>
+
+      {/* Hidden inputs:ref から trigger、ネイティブ UI は出さない */}
       <input
-        ref={inputRef}
+        ref={cameraInputRef}
         type="file"
-        accept={ALLOWED_TYPES.join(',')}
+        accept={ALLOWED_IMAGE_ACCEPT}
         capture="environment"
-        disabled={isAiActive}
+        hidden
         onChange={(e) => {
           const f = e.target.files?.[0];
+          e.target.value = ''; // 同じファイル再選択を許可
           if (f) void handleFile(f);
-          // 同じファイルを再選択できるように value をリセット
-          e.target.value = '';
         }}
-        className="
-          font-mono text-sm
-          file:mr-3 file:py-2 file:px-3 file:border-2 file:border-ink file:bg-paper
-          file:font-display file:tracking-[0.15em]
-          file:cursor-pointer file:hover:bg-ink file:hover:text-paper
-          file:disabled:opacity-40
-          disabled:opacity-40 disabled:cursor-not-allowed
-        "
       />
-
-      {/* upload エラー(クライアント側の MIME / サイズ違反 + ネットワークエラー)*/}
-      {uploadError && (
-        <p role="alert" className="border-l-2 border-ink pl-3 font-jp-display text-xs">
-          {uploadError}
-        </p>
-      )}
-
-      {/* polling のフェッチエラー(404 等)*/}
-      {poll.fetchError && (
-        <p role="alert" className="border-l-2 border-ink pl-3 font-jp-display text-xs">
-          状態取得に失敗しました:{poll.fetchError}
-        </p>
-      )}
-
-      {/* timeout */}
-      {poll.timedOut && (
-        <div className="border-l-2 border-ink pl-3 flex flex-col gap-1">
-          <p className="font-jp-display text-xs">
-            30 秒経っても OCR が完了しません。再試行してください。
-          </p>
-          <button
-            type="button"
-            onClick={handleRetry}
-            className="font-mono text-xs underline self-start"
-          >
-            別の画像を選ぶ
-          </button>
-        </div>
-      )}
-
-      {/* OCR 失敗(server side OCRFailed)*/}
-      {failed && poll.job && (
-        <div className="border-l-2 border-ink pl-3 flex flex-col gap-1">
-          <p className="font-jp-display text-xs">
-            OCR に失敗:{poll.job.errorMessage ?? '(理由不明)'}
-          </p>
-          <button
-            type="button"
-            onClick={handleRetry}
-            className="font-mono text-xs underline self-start"
-          >
-            別の画像を選ぶ
-          </button>
-        </div>
-      )}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept={ALLOWED_IMAGE_ACCEPT}
+        hidden
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = '';
+          if (f) void handleFile(f);
+        }}
+      />
     </section>
   );
 }
