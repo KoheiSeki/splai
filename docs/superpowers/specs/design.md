@@ -388,14 +388,44 @@ Phase 3 実装。ICA 呼び出しのトークン使用量を記録し、コス�
 
 シンプルなフォーム: 支払者・金額・内容・分担方法・日時。
 
+**MemberShareEditor**(参加者選択 + メンバー別金額):
+
+- 各メンバー行: **参加 checkbox + 名前 + 金額 input(円)**
+- フッタ: `合計 ¥X / 支払額 ¥Y` を常時表示、不一致時は `OVER`(超過) / `SHORT`(不足) を `font-display` で警告
+- **「EVEN SPLIT(均等にわる)」ボタン**: 支払総額を included メンバーに均等配分(余りは先頭に集約)
+- 初期状態: 全員 included + 均等割。AI CHAT draft(`shareMemberIds`)がある場合は該当メンバーのみ initial included
+- バリデーション: `shareType=amount`(全行とも)で `sum(shares.shareValue) === payment.amount` 必須。不一致時は Frontend で submit ボタン disabled + Backend で `InvalidPaymentShares`(400)
+- 不一致時の警告・「参加者を 1 人以上選択」ガイドは `border-l-2 border-ink` の editorial left-rule(`--red` は使わない)
+- **同一の `MemberShareEditor` を §6.4.2(OCR 確認画面)と §6.4.3(AI CHAT → PaymentForm draft)からも再利用する**(`features/payments/components/member-share-editor.tsx`)
+
 #### 6.4.2 レシート OCR(非同期)
 
-1. 画像撮影 → POST 送信
-2. Backend が Storage にアップロード、`ocr_jobs` に登録、即 job_id 返却
-3. Backend が非同期で GCP Vision API を呼び出し
-4. Frontend は 2秒間隔でポーリング(最大 30秒)
-5. 結果を確認画面で編集可能な状態で提示
-6. ユーザー確定で `payments` 作成、画像は 24時間後削除
+1. 画像撮影 → `POST /api/groups/{group_id}/ocr/upload` で multipart 送信(`file` のみ。content-type / size は backend で再検証)
+2. Backend が **UUID 先行採番** → Supabase Storage(`receipts/{group_id}/{job_id}.{ext}`)へアップロード → `ocr_jobs` に `pending` で INSERT → `db.commit()` → `asyncio.create_task(run_job)` の順で起動、即 `{ jobId }` を返却(201)
+3. Background `run_job` が **2 トランザクション**(`pending→processing` を確定 → 重い OCR 実行 → `succeeded/failed` を反映)で進行。Vision SDK は同期なので `asyncio.to_thread` でオフロード
+4. Frontend は `GET /api/ocr-jobs/{job_id}` を **2 秒間隔・最大 15 回(= 30 秒)**でポーリング(`AbortController` で hook unmount 時に確実に停止)
+5. 成功時は `OcrConfirmForm` で店名・合計・参加者・金額を編集可能。**§6.4.1 と同一の `MemberShareEditor` を使用**(`buildInitialRows(members, totalAmount, null)` で全員 included + 均等割の初期状態)
+6. ユーザー確定で `POST /api/groups/{group_id}/payments`(body に `ocrJobId` 含む)→ `source=ocr`、`payment.ocr_image_path = ocr_job.image_path`、`ocr_job.payment_id = payment.id` を同一 tx で双方向 link
+7. 画像は 24 時間後削除(Phase 5 / Supabase Storage lifecycle)
+
+**`ocr_jobs.result_json` スキーマ(DB は snake_case JSONB、API 出力は camelCase に変換):**
+
+| DB(snake_case) | API(camelCase) | 型 | 説明 |
+| --- | --- | --- | --- |
+| `merchant_name` | `merchantName` | `string \| null` | 店名(OCR 1 行目をヒューリスティック抽出、MVP) |
+| `total_amount` | `totalAmount` | `integer \| null` | 合計額(`合計` / `総計` / `¥` の正規表現で末尾抽出) |
+| `raw_text` | `rawText` | `string` | Vision `full_text_annotation.text` をそのまま保存 |
+
+**ポーリング失敗系の HTTP 仕様:**
+
+- `OCRFailed`(Vision エラー / 画像にテキストなし / Storage download 失敗): `ocr_jobs.status = failed` + `error_message` 記録 → Frontend は `failed` ステータスで取得し UI に表示(API として 502 を返すのは Storage upload 同期失敗のみ。OCR 処理本体は非同期なので 200 でジョブを返し、status フィールドで結果を伝える)
+- 30 秒 timeout: Frontend 側で打ち切り「再試行」ボタン提示(Backend は引き続き処理して `succeeded` に至る可能性あり)
+- 二重登録防止: 同じ `ocr_jobs.payment_id` が設定済みの状態で再 link しようとすると **`409 OcrJobAlreadyLinked`**。Frontend(OcrConfirmForm)はこれを成功扱いに昇格して確認画面を閉じる(モバイル二度押し / 再送信の冪等保護)
+
+**`--red` 発色ルール(§12.3):**
+
+- AI 能動状態(画像 upload 中 + OCR polling 中)のみ section border / bg / header / progress bar を `--red`
+- `failed` / `timed_out` / クライアント側検証エラーは `border-l-4 border-ink` の editorial left-rule で表現(エラーは AI 起動状態ではない)
 
 #### 6.4.3 AI チャット入力
 
@@ -432,8 +462,8 @@ Phase 3 実装。ICA 呼び出しのトークン使用量を記録し、コス�
 | PATCH  | /api/groups/{group_id}/payments/{payment_id}        | 支払い編集                           |
 | DELETE | /api/groups/{group_id}/payments/{payment_id}        | 支払い論理削除                       |
 | GET    | /api/groups/{group_id}/settlement                   | 清算結果(貪欲法 + AI解説)            |
-| POST   | /api/ocr/upload                                     | レシート画像アップロード→ジョブ作成  |
-| GET    | /api/ocr-jobs/{id}                                  | OCR ジョブ状態確認                   |
+| POST   | /api/groups/{group_id}/ocr/upload                   | レシート画像アップロード→ジョブ作成(write、`X-Member-Id` 必須)|
+| GET    | /api/ocr-jobs/{job_id}                              | OCR ジョブ状態確認(read、認証不要)|
 | POST   | /api/ai/chat-payment                                | AIチャット入力(SSEストリーミング)    |
 | POST   | /api/ai/rewrite-share-message                       | 共有メッセージのトーン変換           |
 | POST   | /api/ai/explain-settlement                          | 清算結果の自然言語解説               |
@@ -450,6 +480,107 @@ Phase 3 実装。ICA 呼び出しのトークン使用量を記録し、コス�
 - 全エンドポイントで `X-Request-Id` ヘッダを尊重(無ければバックエンドで生成)
 - レスポンスは Pydantic モデル → OpenAPI スキーマ → Zod 自動生成
 - エラーレスポンスは RFC 7807(Problem Details)形式に統一
+
+### Request / Response 例
+
+#### `POST /api/groups/{group_id}/ocr/upload`
+
+```http
+POST /api/groups/d771bccf-65ef-4e89-8b69-60cd8b343ce8/ocr/upload
+Content-Type: multipart/form-data; boundary=...
+X-Member-Id: 4680328e-99db-483a-9a07-c01c6c9ef0ed
+
+(form-data: file=<binary image, jpeg/png/webp, ≤ 10MB>)
+```
+
+```json
+// 201 Created
+{ "jobId": "5ca1caa0-8c28-4e2f-9f22-43b44d7f241c" }
+```
+
+主な失敗:`400`(content-type / size 違反 / 空ファイル)、`401 MemberMismatch`(path の group_id と X-Member-Id 不一致)、`502 OCRFailed`(Storage upload 同期失敗のみ)。
+
+#### `GET /api/ocr-jobs/{job_id}`
+
+```json
+// 200 OK(処理中)
+{
+  "id": "5ca1caa0-...",
+  "groupId": "d771bccf-...",
+  "status": "processing",
+  "result": null,
+  "errorMessage": null,
+  "paymentId": null
+}
+
+// 200 OK(成功)
+{
+  "id": "5ca1caa0-...",
+  "groupId": "d771bccf-...",
+  "status": "succeeded",
+  "result": {
+    "merchantName": "居酒屋A",
+    "totalAmount": 12000,
+    "rawText": "居酒屋A\n2026/06/07\n合計 ¥12,000\n(税込)"
+  },
+  "errorMessage": null,
+  "paymentId": null
+}
+
+// 200 OK(失敗)
+{
+  "id": "5ca1caa0-...",
+  "groupId": "d771bccf-...",
+  "status": "failed",
+  "result": null,
+  "errorMessage": "no text detected in receipt image",
+  "paymentId": null
+}
+```
+
+`paymentId` は OCR 経路で `POST payments` が成功して双方向 link されたあとに埋まる(Frontend は polling 中にこれが non-null になったら「既に登録済み」を検知できる)。
+
+#### `POST /api/groups/{group_id}/payments`(OCR 経路 + amount shares)
+
+```json
+// Request
+{
+  "payerId": "4680328e-...",
+  "amount": 12000,
+  "description": "居酒屋A",
+  "ocrJobId": "5ca1caa0-...",
+  "shares": [
+    { "memberId": "4680328e-...", "shareType": "amount", "shareValue": 6000 },
+    { "memberId": "b9c3a2d1-...", "shareType": "amount", "shareValue": 6000 }
+  ]
+}
+```
+
+```json
+// 201 Created
+{
+  "id": "b377385c-c383-4070-86bf-a2eae8e2a420",
+  "payerId": "4680328e-...",
+  "amount": 12000,
+  "description": "居酒屋A",
+  "paidAt": "2026-06-13T02:54:00Z",
+  "source": "ocr",
+  "ocrImagePath": "receipts/d771bccf-.../5ca1caa0-....jpg",
+  "shares": [
+    { "memberId": "4680328e-...", "shareType": "amount", "shareValue": 6000 },
+    { "memberId": "b9c3a2d1-...", "shareType": "amount", "shareValue": 6000 }
+  ]
+}
+```
+
+OCR 経路特有の失敗:
+
+- `400 OcrJobNotReady`: `ocr_jobs.status` が `succeeded` 以外(pending / processing / failed)で確定しようとした
+- `400 OcrJobMismatch`: `ocr_jobs.group_id` が path の `group_id` と不一致
+- `409 OcrJobAlreadyLinked`: 同 `ocr_jobs` が既に別 payment と link 済み(再送信の冪等保護)
+- `400 InvalidPaymentShares`: 全 share が `amount` の場合に `sum(shareValue) !== amount`、または所属外の member が含まれる
+
+`ocrJobId` 省略時は従来通り `source: "manual"` で作成され `ocrImagePath` は `null`(後方互換)。
 
 ---
 

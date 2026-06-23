@@ -92,7 +92,7 @@ lefthook install         # repo clone 直後に 1 回実行
 | 1   | Core Features     | ✅ 完了  | グループ作成 → メンバー登録 → 支払い記録 → 清算結果(貪欲法)を本番で動作確認済み  |
 | 2   | URL Sharing UX    | ✅ 完了  | Web Share API / LINE 共有 / QR(`qrcode.react`)/ 動的 OGP(`opengraph-image.tsx`)|
 | 3   | AI Features       | ✅ 完了  | チャット入力 / メッセージ生成 / 清算解説                                            |
-| 4   | OCR               | 📝 計画作成中 | レシート OCR / 参加者選択 / メンバー別金額入力                                      |
+| 4   | OCR               | ✅ 完了  | レシート OCR(GCP Vision)/ Supabase Storage / 参加者選択 + メンバー別金額入力 / OCR 確認画面 / dashboard 3 タブ統合(FORM \| AI CHAT \| OCR) |
 | 5   | Hardening         | 🔒 未着手 | エラー処理 / レート制限 / Sentry / E2E テスト                                       |
 
 凡例: 📝 計画作成中 / 🔒 未着手 / ✅ 完了
