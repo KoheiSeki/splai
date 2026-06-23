@@ -55,6 +55,10 @@
             },
             "type": "array",
             "title": "Shares"
+          },
+          "ocrImagePath": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "title": "Ocrimagepath"
           }
         },
         "type": "object",

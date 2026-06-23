@@ -47,4 +47,5 @@ export type PaymentSummary = {
    * @type array
    */
   shares: ShareSummary[];
+  ocrImagePath?: string | null;
 };

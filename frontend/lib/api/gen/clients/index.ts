@@ -4,6 +4,8 @@ export { rewriteShareMessageApiAiRewriteShareMessagePost } from './aiController/
 export { createGroupApiGroupsPost } from './groupsController/createGroupApiGroupsPost.ts';
 export { getGroupApiGroupsGroupIdGet } from './groupsController/getGroupApiGroupsGroupIdGet.ts';
 export { addMemberApiGroupsGroupIdMembersPost } from './membersController/addMemberApiGroupsGroupIdMembersPost.ts';
+export { getOcrJobApiOcrJobsJobIdGet } from './ocrController/getOcrJobApiOcrJobsJobIdGet.ts';
+export { uploadReceiptApiGroupsGroupIdOcrUploadPost } from './ocrController/uploadReceiptApiGroupsGroupIdOcrUploadPost.ts';
 export { createPaymentApiGroupsGroupIdPaymentsPost } from './paymentsController/createPaymentApiGroupsGroupIdPaymentsPost.ts';
 export { deletePaymentApiGroupsGroupIdPaymentsPaymentIdDelete } from './paymentsController/deletePaymentApiGroupsGroupIdPaymentsPaymentIdDelete.ts';
 export { updatePaymentApiGroupsGroupIdPaymentsPaymentIdPatch } from './paymentsController/updatePaymentApiGroupsGroupIdPaymentsPaymentIdPatch.ts';

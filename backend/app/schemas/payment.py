@@ -33,6 +33,7 @@ class CreatePaymentRequest(CamelModel):
     description: str = Field(default="", max_length=500)
     paid_at: datetime | None = None
     shares: list[ShareInput] = Field(min_length=1)
+    ocr_job_id: UUID | None = None
 
 
 class UpdatePaymentRequest(CamelModel):
@@ -59,3 +60,4 @@ class PaymentSummary(CamelModel):
     paid_at: datetime
     source: Literal["manual", "ocr", "chat"]
     shares: list[ShareSummary]
+    ocr_image_path: str | None = None

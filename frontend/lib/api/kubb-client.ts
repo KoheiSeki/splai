@@ -12,7 +12,7 @@ import type { AxiosError, AxiosRequestConfig } from 'axios';
 
 import { apiClient } from './api-client';
 
-export type RequestConfig<TData = unknown> = AxiosRequestConfig<TData> & {
+export type RequestConfig<TData = unknown> = Omit<AxiosRequestConfig<TData>, 'data'> & {
   url: string;
   method:
     | 'GET'
@@ -29,6 +29,10 @@ export type RequestConfig<TData = unknown> = AxiosRequestConfig<TData> & {
     | 'delete'
     | 'head'
     | 'options';
+  // multipart endpoint(OCR upload 等)用に FormData も受け付ける。kubb 生成コードが
+  // `buildFormData(data)` で TVariables(`{ file: Blob }`)を FormData に変換し、
+  // `data: formData as FormData` を渡してくる構造のため、union で許容しないと型エラー。
+  data?: TData | FormData;
 };
 
 export type ResponseConfig<TData = unknown> = {

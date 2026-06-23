@@ -29,4 +29,5 @@ export type CreatePaymentRequest = {
    * @type array
    */
   shares: ShareInput[];
+  ocrJobId?: string | null;
 };
