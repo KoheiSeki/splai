@@ -1,0 +1,14 @@
+{
+  "properties": {
+    "merchantName": {
+      "anyOf": [{ "type": "string" }, { "type": "null" }],
+      "title": "Merchantname"
+    },
+    "totalAmount": { "anyOf": [{ "type": "integer" }, { "type": "null" }], "title": "Totalamount" },
+    "rawText": { "type": "string", "title": "Rawtext" }
+  },
+  "type": "object",
+  "required": ["rawText"],
+  "title": "OcrResultDTO",
+  "x-readme-ref-name": "OcrResultDTO"
+}

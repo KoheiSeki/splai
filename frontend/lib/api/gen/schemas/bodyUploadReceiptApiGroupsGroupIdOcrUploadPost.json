@@ -1,0 +1,9 @@
+{
+  "properties": {
+    "file": { "type": "string", "contentMediaType": "application/octet-stream", "title": "File" }
+  },
+  "type": "object",
+  "required": ["file"],
+  "title": "Body_upload_receipt_api_groups__group_id__ocr_upload_post",
+  "x-readme-ref-name": "Body_upload_receipt_api_groups__group_id__ocr_upload_post"
+}

@@ -1,0 +1,7 @@
+{
+  "properties": { "jobId": { "type": "string", "format": "uuid", "title": "Jobid" } },
+  "type": "object",
+  "required": ["jobId"],
+  "title": "OcrUploadResponse",
+  "x-readme-ref-name": "OcrUploadResponse"
+}

@@ -7,8 +7,15 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.exceptions.domain import GroupNotFound, InvalidPaymentShares
+from app.exceptions.domain import (
+    GroupNotFound,
+    InvalidPaymentShares,
+    OcrJobAlreadyLinked,
+    OcrJobMismatch,
+    OcrJobNotReady,
+)
 from app.models import Member, Payment, PaymentShare, PaymentSource, ShareType
+from app.models.ocr_job import OcrJob, OcrJobStatus
 
 
 @dataclass(frozen=True)
@@ -33,6 +40,7 @@ async def create_payment_with_shares(
     description: str,
     paid_at: datetime | None,
     shares: list[ShareInputDTO],
+    ocr_job_id: UUID | None = None,
 ) -> tuple[Payment, list[PaymentShare]]:
     """支払い + shares を 1 トランザクションで作成する。
 
@@ -45,6 +53,15 @@ async def create_payment_with_shares(
     rows = await db.scalars(
         select(Member.id).where(Member.group_id == group_id, Member.id.in_(member_ids))
     )
+
+    amount_shares = [s for s in shares if s.share_type == "amount"]
+    if amount_shares and len(amount_shares) == len(shares):
+        share_total = sum(int(s.share_value) for s in amount_shares)
+        if share_total != amount:
+            raise InvalidPaymentShares(
+                f"share amounts sum {share_total} does not match payment amount {amount}"
+            )
+
     valid_ids = set(rows.all())
     invalid = member_ids - valid_ids
     if invalid:
@@ -52,17 +69,34 @@ async def create_payment_with_shares(
             f"members {sorted(map(str, invalid))} are not in group {group_id}"
         )
 
-    # 支払い作成
+    ocr_job: OcrJob | None = None
+    if ocr_job_id is not None:
+        ocr_job = await db.get(OcrJob, ocr_job_id)
+        if ocr_job is None:
+            raise OcrJobNotReady(f"ocr_job {ocr_job_id} not found")
+        if ocr_job.group_id != group_id:
+            raise OcrJobMismatch(
+                f"ocr_job {ocr_job_id} belongs to group {ocr_job.group_id}, not {group_id}"
+            )
+        if ocr_job.status != OcrJobStatus.SUCCEEDED:
+            raise OcrJobNotReady(f"ocr_job {ocr_job_id} is {ocr_job.status}, not succeeded")
+        if ocr_job.payment_id is not None:
+            raise OcrJobAlreadyLinked(
+                f"ocr_job {ocr_job_id} already linked to payment {ocr_job.payment_id}"
+            )
+
+    # 支払い作成(ocr_job がある場合は source=ocr、image_path をコピー)
     payment = Payment(
         group_id=group_id,
         payer_id=payer_id,
         amount=amount,
         description=description,
         paid_at=paid_at or datetime.now(tz=UTC),
-        source=PaymentSource.MANUAL,
+        source=PaymentSource.OCR if ocr_job else PaymentSource.MANUAL,
+        ocr_image_path=ocr_job.image_path if ocr_job else None,
     )
     db.add(payment)
-    await db.flush()
+    await db.flush()  # payment.id を populate
 
     # 共有情報作成
     share_models = [
@@ -75,6 +109,10 @@ async def create_payment_with_shares(
         for s in shares
     ]
     db.add_all(share_models)
+
+    # 双方向 link:同一トランザクション内で ocr_job.payment_id = payment.id
+    if ocr_job is not None:
+        ocr_job.payment_id = payment.id
 
     await db.commit()
     await db.refresh(payment)

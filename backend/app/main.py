@@ -2,7 +2,7 @@ import sentry_sdk
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import ai, groups, health, members, payments, settlement
+from app.api import ai, groups, health, members, ocr, payments, settlement
 from app.config import get_settings
 from app.exceptions.handlers import register_exception_handlers
 from app.logging_config import configure_logging
@@ -43,7 +43,7 @@ def create_app() -> FastAPI:
     app.include_router(payments.router)
     app.include_router(settlement.router)
     app.include_router(ai.router)
-
+    app.include_router(ocr.router)
     return app
 
 

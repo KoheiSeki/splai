@@ -10,8 +10,12 @@ import { SettlementView } from '@/features/settlement/components/settlement-view
 import { useState } from 'react';
 import { ShareSection } from '@/features/share/components/share-section';
 import { PaymentChat } from '@/features/ai/components/payment-chat';
+import { OcrJobResponse } from '@/features/ocr/api';
+import { OcrConfirmForm } from '@/features/ocr/components/ocr-confirm-form';
+import { ReceiptUpload } from '@/features/ocr/components/receipt-upload';
 
 type Props = { groupId: string };
+type Tab = 'form' | 'chat' | 'ocr';
 
 export function GroupDashboard({ groupId }: Props) {
   const { memberId, setMemberId } = useMemberStorage(groupId);
@@ -24,11 +28,25 @@ export function GroupDashboard({ groupId }: Props) {
     shareMemberIds: string[];
   } | null>(null);
 
-  const [tab, setTab] = useState<'form' | 'chat'>('form');
+  const [tab, setTab] = useState<Tab>('form');
+  const [ocrDraft, setOcrDraft] = useState<OcrJobResponse | null>(null);
 
   const onChange = () => {
     void reload();
     setRefreshKey((k) => k + 1);
+  };
+
+  // tab を切り替えたら ocrDraft はリセット(別タブで確認画面を残さない)
+  const switchTab = (next: Tab) => {
+    if (next !== 'ocr') setOcrDraft(null);
+    setTab(next);
+  };
+
+  // 登録成功 → group reload + ocrDraft クリア + form タブに戻る
+  const handleOcrCreated = () => {
+    setOcrDraft(null);
+    setTab('form');
+    onChange();
   };
 
   // ロード中
@@ -55,29 +73,20 @@ export function GroupDashboard({ groupId }: Props) {
 
       <section className="flex flex-col gap-4">
         <div className="flex gap-2">
-          <button
-            onClick={() => setTab('form')}
-            className={`font-mono text-xs px-2 py-1 ${tab === 'form' ? 'bg-ink text-paper' : 'border border-ink'}`}
-          >
-            FORM
-          </button>
-          <button
-            onClick={() => setTab('chat')}
-            className={`font-mono text-xs px-2 py-1 ${tab === 'chat' ? 'bg-ink text-paper' : 'border border-ink'}`}
-          >
-            AI CHAT
-          </button>
+          {(['form', 'chat', 'ocr'] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => switchTab(t)}
+              className={`font-mono text-xs px-2 py-1 ${
+                tab === t ? 'bg-ink text-paper' : 'border border-ink'
+              }`}
+            >
+              {t === 'form' ? 'FORM' : t === 'chat' ? 'AI CHAT' : 'OCR'}
+            </button>
+          ))}
         </div>
-        {tab === 'chat' ? (
-          <PaymentChat
-            groupId={groupId}
-            members={data.members}
-            onDraft={(d) => {
-              setDraft(d);
-              setTab('form'); // 入力後はフォームに切り替えて確認させる
-            }}
-          />
-        ) : (
+
+        {tab === 'form' && (
           <PaymentForm
             groupId={groupId}
             memberId={memberId}
@@ -85,6 +94,33 @@ export function GroupDashboard({ groupId }: Props) {
             onCreated={onChange}
             draft={draft ?? undefined}
           />
+        )}
+
+        {tab === 'chat' && (
+          <PaymentChat
+            groupId={groupId}
+            members={data.members}
+            onDraft={(d) => {
+              setDraft(d);
+              setTab('form');
+            }}
+          />
+        )}
+
+        {tab === 'ocr' && (
+          <div className="flex flex-col gap-4">
+            <ReceiptUpload groupId={groupId} memberId={memberId} onSucceeded={setOcrDraft} />
+            {ocrDraft && (
+              <OcrConfirmForm
+                groupId={groupId}
+                memberId={memberId}
+                members={data.members}
+                draft={ocrDraft}
+                onCreated={handleOcrCreated}
+                onCancel={() => setOcrDraft(null)}
+              />
+            )}
+          </div>
         )}
 
         <PaymentList

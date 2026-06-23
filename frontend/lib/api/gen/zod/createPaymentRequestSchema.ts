@@ -19,5 +19,6 @@ export const createPaymentRequestSchema = z
     get shares() {
       return z.array(shareInputSchema.describe('支払い共有入力')).min(1);
     },
+    ocrJobId: z.optional(z.union([z.uuid(), z.null()])),
   })
   .describe('支払い作成リクエスト') as unknown as z.ZodType<CreatePaymentRequest>;

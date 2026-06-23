@@ -543,10 +543,132 @@
           }
         }
       }
+    },
+    "/api/groups/{group_id}/ocr/upload": {
+      "post": {
+        "tags": [
+          "ocr"
+        ],
+        "summary": "Upload Receipt",
+        "description": "レシート画像を受け取り OCR ジョブを起動する。\n\n認可は `Depends(require_member)` が path の `group_id` と `X-Member-Id` を\n照合して完了させる(`MemberMismatch` を内部で投げる)。本ハンドラでは\ncontent-type / size 検証 → Storage upload → DB INSERT → background OCR 起動のみ。",
+        "operationId": "upload_receipt_api_groups__group_id__ocr_upload_post",
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Group Id"
+            }
+          },
+          {
+            "name": "X-Member-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "X-Member-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_receipt_api_groups__group_id__ocr_upload_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OcrUploadResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ocr-jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "ocr"
+        ],
+        "summary": "Get Ocr Job",
+        "description": "ジョブ状態 + 結果(あれば)/ エラー(あれば)を返す。認証不要(read op)。",
+        "operationId": "get_ocr_job_api_ocr_jobs__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OcrJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "Body_upload_receipt_api_groups__group_id__ocr_upload_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_receipt_api_groups__group_id__ocr_upload_post"
+      },
       "ChatPaymentRequest": {
         "properties": {
           "groupId": {
@@ -667,6 +789,18 @@
             "type": "array",
             "minItems": 1,
             "title": "Shares"
+          },
+          "ocrJobId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ocrjobid"
           }
         },
         "type": "object",
@@ -865,6 +999,119 @@
         "title": "MemberSummary",
         "description": "メンバー情報"
       },
+      "OcrJobResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "groupId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Groupid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "processing",
+              "succeeded",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OcrResultDTO"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "errorMessage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Errormessage"
+          },
+          "paymentId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paymentid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "groupId",
+          "status"
+        ],
+        "title": "OcrJobResponse"
+      },
+      "OcrResultDTO": {
+        "properties": {
+          "merchantName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Merchantname"
+          },
+          "totalAmount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Totalamount"
+          },
+          "rawText": {
+            "type": "string",
+            "title": "Rawtext"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rawText"
+        ],
+        "title": "OcrResultDTO"
+      },
+      "OcrUploadResponse": {
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Jobid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "jobId"
+        ],
+        "title": "OcrUploadResponse"
+      },
       "PaymentSummary": {
         "properties": {
           "id": {
@@ -905,6 +1152,17 @@
             },
             "type": "array",
             "title": "Shares"
+          },
+          "ocrImagePath": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ocrimagepath"
           }
         },
         "type": "object",
